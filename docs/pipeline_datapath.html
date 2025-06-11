@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RISC-V 五级流水线数据通路图</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .pipeline-container {
+            width: 100%;
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .stage {
+            display: inline-block;
+            vertical-align: top;
+            margin: 10px;
+            padding: 15px;
+            border: 2px solid #333;
+            border-radius: 8px;
+            min-height: 500px;
+            width: 240px;
+            position: relative;
+        }
+        
+        .stage h3 {
+            text-align: center;
+            margin: 0 0 15px 0;
+            background: #4CAF50;
+            color: white;
+            padding: 8px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        .if-stage { background: #e3f2fd; }
+        .id-stage { background: #f3e5f5; }
+        .ex-stage { background: #fff3e0; }
+        .mem-stage { background: #e8f5e8; }
+        .wb-stage { background: #fce4ec; }
+        
+        .component {
+            background: white;
+            border: 1px solid #666;
+            border-radius: 5px;
+            padding: 8px;
+            margin: 5px 0;
+            text-align: center;
+            font-size: 11px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        
+        .register {
+            background: #ffeb3b;
+            border: 2px solid #f57f17;
+            margin: 15px 5px;
+            padding: 10px;
+            text-align: center;
+            font-size: 10px;
+            font-weight: bold;
+        }
+        
+        .memory {
+            background: #81c784;
+            color: white;
+        }
+        
+        .alu {
+            background: #ff9800;
+            color: white;
+        }
+        
+        .control {
+            background: #9c27b0;
+            color: white;
+        }
+        
+        .mux {
+            background: #2196f3;
+            color: white;
+        }
+        
+        .connection {
+            position: absolute;
+            height: 2px;
+            background: #666;
+            z-index: 1;
+        }
+        
+        .signal-label {
+            font-size: 9px;
+            color: #555;
+            margin: 2px 0;
+            text-align: left;
+        }
+        
+        .hazard-unit {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: #f44336;
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 11px;
+            width: 120px;
+        }
+        
+        .legend {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 5px;
+        }
+        
+        .legend-item {
+            display: inline-block;
+            margin: 5px 15px;
+            font-size: 12px;
+        }
+        
+        .legend-color {
+            display: inline-block;
+            width: 20px;
+            height: 15px;
+            margin-right: 5px;
+            vertical-align: middle;
+            border: 1px solid #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="pipeline-container">
+        <h1 style="text-align: center; color: #333;">RISC-V 五级流水线 CPU 数据通路图</h1>
+        
+        <!-- Hazard Detection Unit -->
+        <div class="hazard-unit">
+            <strong>危险检测单元</strong><br>
+            • Load-Use 检测<br>
+            • 数据前向传递<br>
+            • 分支冲突处理<br>
+            • 流水线控制
+        </div>
+        
+        <!-- IF Stage -->
+        <div class="stage if-stage">
+            <h3>IF - 取指令阶段</h3>
+            
+            <div class="component memory">PC逻辑</div>
+            <div class="signal-label">pc_sel, branch_target</div>
+            
+            <div class="component">PC寄存器</div>
+            <div class="signal-label">32位程序计数器</div>
+            
+            <div class="component">PC+4 加法器</div>
+            <div class="signal-label">下一条指令地址</div>
+            
+            <div class="component memory">指令存储器</div>
+            <div class="signal-label">32位指令输出</div>
+            
+            <div class="component">指令地址</div>
+            <div class="signal-label">instr_addr[31:0]</div>
+            
+            <div style="margin-top: 20px; font-size: 10px;">
+                <strong>输出到IF/ID:</strong><br>
+                • PC<br>
+                • PC+4<br>
+                • 指令[31:0]
+            </div>
+        </div>
+        
+        <!-- IF/ID Register -->
+        <div class="register">
+            <strong>IF/ID</strong><br>
+            流水线寄存器<br>
+            <hr style="margin: 5px 0;">
+            PC<br>
+            PC+4<br>
+            指令[31:0]<br>
+            <hr style="margin: 5px 0;">
+            控制信号:<br>
+            stall, flush
+        </div>
+        
+        <!-- ID Stage -->
+        <div class="stage id-stage">
+            <h3>ID - 指令译码阶段</h3>
+            
+            <div class="component">指令解析</div>
+            <div class="signal-label">opcode, funct3/7, rs1/2, rd</div>
+            
+            <div class="component control">控制单元</div>
+            <div class="signal-label">ALUOp, MemRead, RegWrite等</div>
+            
+            <div class="component control">立即数生成器</div>
+            <div class="signal-label">I/S/B/U/J类型立即数</div>
+            
+            <div class="component memory">寄存器文件</div>
+            <div class="signal-label">32×32位寄存器</div>
+            
+            <div class="component">操作数选择</div>
+            <div class="signal-label">PC vs rs1 (AUIPC/JAL)</div>
+            
+            <div style="margin-top: 15px; font-size: 10px;">
+                <strong>读取:</strong><br>
+                • rs1_data[31:0]<br>
+                • rs2_data[31:0]<br>
+                <strong>输出到ID/EX:</strong><br>
+                • 操作数A/B<br>
+                • 立即数<br>
+                • 控制信号
+            </div>
+        </div>
+        
+        <!-- ID/EX Register -->
+        <div class="register">
+            <strong>ID/EX</strong><br>
+            流水线寄存器<br>
+            <hr style="margin: 5px 0;">
+            PC, PC+4<br>
+            操作数A/B<br>
+            立即数<br>
+            rs1/rs2/rd地址<br>
+            funct3/7<br>
+            <hr style="margin: 5px 0;">
+            控制信号:<br>
+            ALUOp, ALUSrc<br>
+            MemRead/Write<br>
+            RegWrite, Branch
+        </div>
+        
+        <!-- EX Stage -->
+        <div class="stage ex-stage">
+            <h3>EX - 执行阶段</h3>
+            
+            <div class="component mux">前向传递MUX A</div>
+            <div class="signal-label">EX/MEM, MEM/WB前向</div>
+            
+            <div class="component mux">前向传递MUX B</div>
+            <div class="signal-label">寄存器 vs 前向数据</div>
+            
+            <div class="component mux">ALUSrc MUX</div>
+            <div class="signal-label">rs2 vs 立即数</div>
+            
+            <div class="component alu">ALU (算术逻辑单元)</div>
+            <div class="signal-label">加减法, 逻辑运算, 移位</div>
+            
+            <div class="component alu">乘法器</div>
+            <div class="signal-label">MUL, MULH, MULHU, MULHSU</div>
+            
+            <div class="component mux">ALU/MUL结果选择</div>
+            <div class="signal-label">ALU vs 乘法器结果</div>
+            
+            <div style="margin-top: 15px; font-size: 10px;">
+                <strong>输出到EX/MEM:</strong><br>
+                • ALU结果<br>
+                • Zero标志<br>
+                • Store数据<br>
+                • 分支目标地址
+            </div>
+        </div>
+        
+        <!-- EX/MEM Register -->
+        <div class="register">
+            <strong>EX/MEM</strong><br>
+            流水线寄存器<br>
+            <hr style="margin: 5px 0;">
+            PC, PC+4<br>
+            ALU结果<br>
+            Zero标志<br>
+            Store数据<br>
+            立即数<br>
+            rd地址<br>
+            <hr style="margin: 5px 0;">
+            控制信号:<br>
+            MemRead/Write<br>
+            Branch, RegWrite<br>
+            MemToReg
+        </div>
+        
+        <!-- MEM Stage -->
+        <div class="stage mem-stage">
+            <h3>MEM - 内存访问阶段</h3>
+            
+            <div class="component memory">数据存储器</div>
+            <div class="signal-label">Load/Store操作</div>
+            
+            <div class="component">分支判断逻辑</div>
+            <div class="signal-label">BEQ, BNE, BLT, BGE等</div>
+            
+            <div class="component">分支目标计算</div>
+            <div class="signal-label">PC + offset (B/J类型)</div>
+            
+            <div class="component">JALR目标计算</div>
+            <div class="signal-label">rs1 + offset</div>
+            
+            <div class="component control">PC选择逻辑</div>
+            <div class="signal-label">顺序 vs 分支 vs JALR</div>
+            
+            <div style="margin-top: 15px; font-size: 10px;">
+                <strong>Memory接口:</strong><br>
+                • 地址: ALU结果<br>
+                • 写数据: Store数据<br>
+                • 读数据: Load结果<br>
+                <strong>分支控制:</strong><br>
+                • 分支请求<br>
+                • 目标地址
+            </div>
+        </div>
+        
+        <!-- MEM/WB Register -->
+        <div class="register">
+            <strong>MEM/WB</strong><br>
+            流水线寄存器<br>
+            <hr style="margin: 5px 0;">
+            PC+4<br>
+            内存读数据<br>
+            ALU结果<br>
+            rd地址<br>
+            <hr style="margin: 5px 0;">
+            控制信号:<br>
+            RegWrite<br>
+            MemToReg[1:0]
+        </div>
+        
+        <!-- WB Stage -->
+        <div class="stage wb-stage">
+            <h3>WB - 写回阶段</h3>
+            
+            <div class="component mux">写回数据选择</div>
+            <div class="signal-label">ALU结果 vs 内存数据 vs PC+4</div>
+            
+            <div class="component">写回控制</div>
+            <div class="signal-label">RegWrite使能</div>
+            
+            <div style="margin-top: 40px; font-size: 10px;">
+                <strong>写回到寄存器文件:</strong><br>
+                • 目标寄存器: rd<br>
+                • 写数据: 选择结果<br>
+                • 写使能: RegWrite<br>
+                <br>
+                <strong>MemToReg选择:</strong><br>
+                • 00: ALU结果<br>
+                • 01: 内存数据<br>
+                • 10: PC+4 (JAL/JALR)
+            </div>
+        </div>
+        
+        <!-- Legend -->
+        <div class="legend">
+            <h3>图例说明</h3>
+            <div class="legend-item">
+                <span class="legend-color" style="background: #e3f2fd;"></span>
+                IF阶段 - 取指令
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: #f3e5f5;"></span>
+                ID阶段 - 译码
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: #fff3e0;"></span>
+                EX阶段 - 执行
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: #e8f5e8;"></span>
+                MEM阶段 - 内存访问
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: #fce4ec;"></span>
+                WB阶段 - 写回
+            </div>
+            <br>
+            <div class="legend-item">
+                <span class="legend-color" style="background: #ffeb3b;"></span>
+                流水线寄存器
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: #81c784;"></span>
+                存储器组件
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: #ff9800;"></span>
+                运算单元
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: #9c27b0;"></span>
+                控制逻辑
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: #2196f3;"></span>
+                多路选择器
+            </div>
+        </div>
+        
+        <!-- Key Features -->
+        <div style="margin-top: 20px; padding: 15px; background: #f0f0f0; border-radius: 5px;">
+            <h3>关键特性</h3>
+            <div style="display: flex; justify-content: space-between;">
+                <div style="flex: 1; margin-right: 20px;">
+                    <h4>支持的指令集</h4>
+                    <ul style="font-size: 12px;">
+                        <li>RV32I 基本指令集</li>
+                        <li>M扩展 (乘法指令)</li>
+                        <li>分支跳转指令</li>
+                        <li>Load/Store指令</li>
+                    </ul>
+                </div>
+                <div style="flex: 1; margin-right: 20px;">
+                    <h4>危险处理</h4>
+                    <ul style="font-size: 12px;">
+                        <li>数据前向传递</li>
+                        <li>Load-Use冲突检测</li>
+                        <li>分支预测失败处理</li>
+                        <li>流水线停顿和冲刷</li>
+                    </ul>
+                </div>
+                <div style="flex: 1;">
+                    <h4>性能特性</h4>
+                    <ul style="font-size: 12px;">
+                        <li>5级流水线设计</li>
+                        <li>理论CPI接近1</li>
+                        <li>支持数据前向传递</li>
+                        <li>高效的分支处理</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
