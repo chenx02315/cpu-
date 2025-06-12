@@ -1,0 +1,13 @@
+# 忽略 simulation_output 文件夹
+simulation_output/
+
+# 忽略 csrc 文件夹
+csrc/
+
+# 补充忽略常见临时文件（可选）
+*.log
+*.vcd
+*.fsdb
+*.so
+*.a
+*.sdb

@@ -106,9 +106,10 @@
 //=================================================
 // PC选择信号定义
 //=================================================
-`define PC_SEL_PLUS4    2'b00       // PC + 4
-`define PC_SEL_BRANCH   2'b01       // 分支跳转
-`define PC_SEL_JALR     2'b10       // JALR跳转
+`define PC_SEL_PC_PLUS_4      2'b00    // PC+4
+`define PC_SEL_BRANCH_JUMP    2'b01    // 分支/跳转目标
+`define PC_SEL_JALR           2'b10    // JALR目标
+`define PC_SEL_EXCEPTION      2'b11    // 异常处理（保留）
 
 //=================================================
 // MemToReg选择信号定义

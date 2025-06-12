@@ -1,6 +1,8 @@
 `include "defines.v"
 
 module id_stage (
+    input  wire        clk,          // 修复：添加时钟信号
+    input  wire        rst_n,        // 修复：添加复位信号
     input  wire [31:0] pc_i,
     input  wire [31:0] pc_plus_4_i,
     input  wire [31:0] instruction_i,
@@ -41,13 +43,18 @@ module id_stage (
     wire [4:0] rs2_addr = instruction_i[24:20];
     wire [6:0] funct7 = instruction_i[31:25];
     
-    // 调试输出 - 显示指令解码过程
-    always @(*) begin
-        if (pc_i < 32'h40) begin // 只显示前16条指令
-            $display("[ID] PC=0x%08x, 指令=0x%08x, opcode=0x%02x, rd=x%0d", 
+    // 修复：调试输出 - 使用时钟边沿触发避免重复
+    always @(posedge clk) begin
+        if (rst_n && instruction_i != 32'h00000013) begin  // 不是NOP指令
+            $display("[ID] PC=0x%08x, 指令=0x%08x, opcode=0x%02x, rd=x%d", 
                     pc_i, instruction_i, opcode, rd_addr);
+            
             if (opcode == `OPCODE_LUI) begin
-                $display("     -> LUI指令: x%0d = 0x%08x", rd_addr, {instruction_i[31:12], 12'b0});
+                $display("     -> LUI指令: x%d = 0x%08x", rd_addr, immediate_ex_o);
+                $display("     -> 指令字段: [31:12]=0x%05x, [11:7]=0x%02x", 
+                        instruction_i[31:12], instruction_i[11:7]);
+                $display("     -> 解码结果: rd=%d, 立即数=0x%08x", 
+                        rd_addr, immediate_ex_o);
             end
         end
     end

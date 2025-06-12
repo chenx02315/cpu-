@@ -189,8 +189,10 @@ module cpu_top (
         .instruction_id_o(instruction_id)
     );
     
-    // Instantiate ID Stage
+    // Instantiate ID Stage - 修复：添加时钟和复位信号
     id_stage u_id_stage (
+        .clk(clk),                              // 修复：连接时钟
+        .rst_n(rst_n),                          // 修复：连接复位
         .pc_i(pc_id),
         .pc_plus_4_i(pc_plus_4_id),
         .instruction_i(instruction_id),
@@ -364,7 +366,7 @@ module cpu_top (
         .read_data_o(data_mem_read_data)
     );
     
-    // Instantiate MEM Stage
+    // Instantiate MEM Stage - 修复：使用正确的端口名称
     mem_stage u_mem_stage (
         .pc_ex_mem_i(pc_ex_mem_reg),
         .pc_plus_4_mem_i(pc_plus_4_ex_mem_reg),
@@ -374,7 +376,7 @@ module cpu_top (
         .immediate_ex_mem_i(immediate_ex_mem_reg),
         .rd_addr_mem_i(rd_addr_ex_mem_reg),
         .funct3_mem_i(funct3_ex_mem_reg),
-        .opcode_ex_mem_i(opcode_ex_mem_reg),
+        .opcode_ex_mem_i(opcode_ex_mem_reg),     // 修复：使用正确的端口名
         .mem_read_mem_i(mem_read_ex_mem_reg),
         .mem_write_mem_i(mem_write_ex_mem_reg),
         .branch_ctrl_mem_i(branch_ctrl_ex_mem_reg),
