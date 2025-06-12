@@ -1,3 +1,0 @@
-Command Line: /cad/synopsys/verdi/R-2020.12-SP2/platform/LINUXAMD64/bin/Novas -full64 -sv -ssf cpu_riscv_test.fsdb
-uname(Linux bupt-vncs2 3.10.0-1160.119.1.el7.x86_64 #1 SMP Tue Jun 4 14:43:51 UTC 2024 x86_64)
-au time 1626.721758 22.288948 23.778907 delta 392544256 392544256 total 882483200 882483200

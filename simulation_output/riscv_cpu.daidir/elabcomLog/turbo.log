@@ -1,5 +1,0 @@
-Command Line: /cad/synopsys/vcs-mx/R-2020.12-SP2/linux64/bin/elabcom -logdir /home/jiangchuanc/Desktop/Design_CPU/simulation_output/riscv_cpu.daidir/elabcomLog -simvdaidir /home/jiangchuanc/Desktop/Design_CPU/simulation_output/riscv_cpu.daidir -lib /home/jiangchuanc/Desktop/Design_CPU/simulation_output/riscv_cpu.daidir/work -saveLevel -elab /home/jiangchuanc/Desktop/Design_CPU/simulation_output/riscv_cpu.daidir/kdb -simflow -simdir /home/jiangchuanc/Desktop/Design_CPU/simulation_output/riscv_cpu.daidir/kdb_libs -topfile /home/jiangchuanc/Desktop/Design_CPU/simulation_output/riscv_cpu.daidir/.elabcomTopFile -pkgfile /home/jiangchuanc/Desktop/Design_CPU/simulation_output/riscv_cpu.daidir/.elabcomPkgFile -ssv -ssy -Lf work +disable_message+C00380+C00381 +disable_message+C00388+C00389
-uname(Linux bupt-vncs2 3.10.0-1160.119.1.el7.x86_64 #1 SMP Tue Jun 4 14:43:51 UTC 2024 x86_64)
-[INFO] error/warning message 'C00388' has been suppressed.
-[INFO] error/warning message 'C00389' has been suppressed.
-au time 1.541716 0.097051 0.111809 delta 94912512 94912512 total 204877824 204877824
