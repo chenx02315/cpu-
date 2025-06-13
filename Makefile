@@ -93,10 +93,14 @@ $(EXECUTABLE): $(ALL_SOURCES)
 		$(COMPILE_OPTS) \
 		$(ALL_SOURCES) \
 		2>&1 | tee $(SIM_DIR)/compile.log
-	@if [ $$? -eq 0 ]; then \
-		echo "✓ 编译成功!"; \
+	@if [ -f $(EXECUTABLE) ] && [ -x $(EXECUTABLE) ]; then \
+		echo "✓ 编译成功! 可执行文件: $(EXECUTABLE)"; \
+		ls -la $(EXECUTABLE); \
 	else \
-		echo "✗ 编译失败，查看 $(SIM_DIR)/compile.log"; \
+		echo "✗ 编译失败 - 可执行文件不存在或不可执行"; \
+		echo "检查许可证和编译日志: $(SIM_DIR)/compile.log"; \
+		echo "最后几行编译输出:"; \
+		tail -10 $(SIM_DIR)/compile.log; \
 		exit 1; \
 	fi
 
