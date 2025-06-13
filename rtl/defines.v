@@ -81,7 +81,7 @@
 // ALU控制信号定义
 //=================================================
 `define ALU_ADD         4'b0000     // 加法
-`define ALU_SUB         4'b0001     // 减法
+`define ALU_SUB         4'b0001     // 减法 - 确保SUB操作码
 `define ALU_AND         4'b0010     // 按位与
 `define ALU_OR          4'b0011     // 按位或
 `define ALU_XOR         4'b0100     // 按位异或
