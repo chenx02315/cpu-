@@ -4,6 +4,7 @@ simulation_output/
 # 忽略 csrc 文件夹
 csrc/
 
+tools/
 # 补充忽略常见临时文件（可选）
 *.log
 *.vcd

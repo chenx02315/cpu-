@@ -6,23 +6,23 @@ module control_unit (
     input  wire [6:0] funct7_i,
     
     output reg  [3:0] alu_op_o,
-    output reg        alu_src_o,        // 0: reg2_data, 1: immediate
+    output reg        alu_src_o,
     output reg        mem_read_o,
     output reg        mem_write_o,
     output reg        branch_o,
     output reg        reg_write_o,
-    output reg [1:0]  mem_to_reg_o      // 00: ALU, 01: Memory, 10: PC+4
+    output reg [1:0]  mem_to_reg_o
 );
 
     always @(*) begin
-        // Default values
+        // 默认值
         alu_op_o = `ALU_ADD;
         alu_src_o = 1'b0;
         mem_read_o = 1'b0;
         mem_write_o = 1'b0;
         branch_o = 1'b0;
         reg_write_o = 1'b0;
-        mem_to_reg_o = `MEM_TO_REG_ALU;
+        mem_to_reg_o = 2'b00;
         
         case (opcode_i)
             `OPCODE_LUI: begin
@@ -30,7 +30,6 @@ module control_unit (
                 alu_src_o = 1'b1;
                 reg_write_o = 1'b1;
                 mem_to_reg_o = `MEM_TO_REG_ALU;
-                branch_o = 1'b0;
             end
             
             `OPCODE_AUIPC: begin
@@ -38,7 +37,6 @@ module control_unit (
                 alu_src_o = 1'b1;
                 reg_write_o = 1'b1;
                 mem_to_reg_o = `MEM_TO_REG_ALU;
-                branch_o = 1'b0;
             end
             
             `OPCODE_JAL: begin
@@ -46,7 +44,6 @@ module control_unit (
                 alu_src_o = 1'b1;
                 reg_write_o = 1'b1;
                 mem_to_reg_o = `MEM_TO_REG_PC4;
-                branch_o = 1'b0;
             end
             
             `OPCODE_JALR: begin
@@ -54,20 +51,13 @@ module control_unit (
                 alu_src_o = 1'b1;
                 reg_write_o = 1'b1;
                 mem_to_reg_o = `MEM_TO_REG_PC4;
-                branch_o = 1'b0;
             end
             
             `OPCODE_BRANCH: begin
                 case (funct3_i)
-                    `FUNCT3_BEQ, `FUNCT3_BNE: begin
-                        alu_op_o = `ALU_SUB;
-                    end
-                    `FUNCT3_BLT, `FUNCT3_BGE: begin
-                        alu_op_o = `ALU_SLT;
-                    end
-                    `FUNCT3_BLTU, `FUNCT3_BGEU: begin
-                        alu_op_o = `ALU_SLTU;
-                    end
+                    `FUNCT3_BEQ, `FUNCT3_BNE: alu_op_o = `ALU_SUB;
+                    `FUNCT3_BLT, `FUNCT3_BGE: alu_op_o = `ALU_SLT;
+                    `FUNCT3_BLTU, `FUNCT3_BGEU: alu_op_o = `ALU_SLTU;
                     default: alu_op_o = `ALU_SUB;
                 endcase
                 alu_src_o = 1'b0;
@@ -80,14 +70,12 @@ module control_unit (
                 mem_read_o = 1'b1;
                 reg_write_o = 1'b1;
                 mem_to_reg_o = `MEM_TO_REG_MEM;
-                branch_o = 1'b0;
             end
             
             `OPCODE_STORE: begin
                 alu_op_o = `ALU_ADD;
                 alu_src_o = 1'b1;
                 mem_write_o = 1'b1;
-                branch_o = 1'b0;
             end
             
             `OPCODE_IMM: begin
@@ -110,18 +98,16 @@ module control_unit (
                 alu_src_o = 1'b1;
                 reg_write_o = 1'b1;
                 mem_to_reg_o = `MEM_TO_REG_ALU;
-                branch_o = 1'b0;
             end
             
             `OPCODE_ARITH: begin
                 case (funct3_i)
                     `FUNCT3_ADD: begin
-                        if (funct7_i == `FUNCT7_SUB)
+                        if (funct7_i == `FUNCT7_SUB) begin
                             alu_op_o = `ALU_SUB;
-                        else if (funct7_i == `FUNCT7_MUL)
-                            alu_op_o = `ALU_MUL;
-                        else
+                        end else begin
                             alu_op_o = `ALU_ADD;
+                        end
                     end
                     `FUNCT3_SLL: alu_op_o = `ALU_SLL;
                     `FUNCT3_SLT: alu_op_o = `ALU_SLT;
@@ -135,33 +121,11 @@ module control_unit (
                     end
                     `FUNCT3_OR: alu_op_o = `ALU_OR;
                     `FUNCT3_AND: alu_op_o = `ALU_AND;
-                    `FUNCT3_MULH: begin
-                        // 修复: 正确处理MULH指令
-                        if (funct7_i == `FUNCT7_MUL)
-                            alu_op_o = `ALU_MULH;
-                        else
-                            alu_op_o = `ALU_ADD;  // 默认操作
-                    end
-                    `FUNCT3_MULHSU: begin
-                        // 修复: 正确处理MULHSU指令
-                        if (funct7_i == `FUNCT7_MUL)
-                            alu_op_o = `ALU_MULHSU;
-                        else
-                            alu_op_o = `ALU_ADD;  // 默认操作
-                    end
-                    `FUNCT3_MULHU: begin
-                        // 修复: 正确处理MULHU指令
-                        if (funct7_i == `FUNCT7_MUL)
-                            alu_op_o = `ALU_MULHU;
-                        else
-                            alu_op_o = `ALU_ADD;  // 默认操作
-                    end
                     default: alu_op_o = `ALU_ADD;
                 endcase
                 alu_src_o = 1'b0;
                 reg_write_o = 1'b1;
                 mem_to_reg_o = `MEM_TO_REG_ALU;
-                branch_o = 1'b0;
             end
             
             default: begin

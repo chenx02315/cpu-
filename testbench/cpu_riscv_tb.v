@@ -187,6 +187,30 @@ module cpu_riscv_tb;
     integer branch_taken_count = 0;
     integer branch_not_taken_count = 0;
 
+    // 标准答案寄存器值 - 用于最终对比
+    reg [31:0] standard_registers [0:31];
+    
+    // 初始化标准答案
+    initial begin
+        // 标准答案寄存器值
+        standard_registers[0]  = 32'h00000000; standard_registers[1]  = 32'h9ddcfc39;
+        standard_registers[2]  = 32'h7a09a5eb; standard_registers[3]  = 32'hec66e522;
+        standard_registers[4]  = 32'h5980edb5; standard_registers[5]  = 32'h80000122;
+        standard_registers[6]  = 32'h7ffffabd; standard_registers[7]  = 32'h401e1042;
+        standard_registers[8]  = 32'h7fffffff; standard_registers[9]  = 32'h6eefda65;
+        standard_registers[10] = 32'h31a9e800; standard_registers[11] = 32'h00000003;
+        standard_registers[12] = 32'hfc1eecab; standard_registers[13] = 32'h00000000;
+        standard_registers[14] = 32'h00000001; standard_registers[15] = 32'h00000000;
+        standard_registers[16] = 32'h00000001; standard_registers[17] = 32'hb500d4a3;
+        standard_registers[18] = 32'hffffffb7; standard_registers[19] = 32'hdba3160f;
+        standard_registers[20] = 32'h00000000; standard_registers[21] = 32'h00000001;
+        standard_registers[22] = 32'h00000000; standard_registers[23] = 32'h00000001;
+        standard_registers[24] = 32'hd8d40000; standard_registers[25] = 32'h000001e8;
+        standard_registers[26] = 32'hffd3b4d7; standard_registers[27] = 32'h424dd1f4;
+        standard_registers[28] = 32'h00000100; standard_registers[29] = 32'h000000fc;
+        standard_registers[30] = 32'h14aae560; standard_registers[31] = 32'hffffffff;
+    end
+
     // LUI指令结果检查
     task check_lui_results;
         begin
@@ -222,6 +246,172 @@ module cpu_riscv_tb;
             $display("  x3应为0xf0c50cff, 实际: 0x%08x %s", 
                     u_cpu_top.u_register_file.registers[3],
                     (u_cpu_top.u_register_file.registers[3] == 32'hf0c50cff) ? "✓" : "✗");
+        end
+    endtask
+    
+    // 获取寄存器值的函数
+    function [31:0] get_register_value;
+        input [4:0] reg_num;
+        begin
+            if (reg_num == 0)
+                get_register_value = 32'h0;
+            else
+                get_register_value = u_cpu_top.u_register_file.registers[reg_num];
+        end
+    endfunction
+
+    // 最终验证任务 - 替换原有的final_validation
+    task final_validation;
+        integer i;
+        integer match_count, critical_errors;  // 修复：改名避免关键字冲突
+        reg [31:0] actual_val;
+        reg [31:0] diff_val;
+        begin
+            $display("\n=== 详细寄存器核查结果 ===");
+            $display("对比实际输出与标准答案");
+            $display("========================================================================");
+            $display("寄存器  标准答案      实际输出      状态    差值          分析");
+            $display("------------------------------------------------------------------------");
+            
+            match_count = 0;
+            critical_errors = 0;
+            
+            for (i = 0; i < 32; i = i + 1) begin
+                actual_val = get_register_value(i);
+                
+                if (actual_val == standard_registers[i]) begin
+                    match_count = match_count + 1;
+                    $display("x%02d     0x%08x    0x%08x    ✓      0x00000000    匹配", 
+                            i, standard_registers[i], actual_val);
+                end else begin
+                    diff_val = actual_val - standard_registers[i];
+                    $display("x%02d     0x%08x    0x%08x    ✗      0x%08x    %s", 
+                            i, standard_registers[i], actual_val, diff_val,
+                            get_error_analysis(i, standard_registers[i], actual_val));
+                    
+                    // 标记关键错误
+                    if (i == 4 || i == 29 || i == 30 || i == 31) begin
+                        critical_errors = critical_errors + 1;
+                    end
+                end
+            end
+            
+            $display("------------------------------------------------------------------------");
+            $display("统计结果:");
+            $display("  匹配寄存器: %2d/32 (%.1f%%)", match_count, real'(match_count) * 100.0 / 32.0);
+            $display("  不匹配寄存器: %2d/32", 32 - match_count);
+            $display("  关键错误数: %2d (x4, x29, x30, x31)", critical_errors);
+            
+            // 详细分析关键差异
+            $display("\n=== 关键差异详细分析 ===");
+            analyze_critical_differences();
+            
+            // 给出调试建议
+            $display("\n=== 调试建议 ===");
+            provide_debug_suggestions(critical_errors);
+            
+            $display("========================================================================");
+        end
+    endtask
+    
+    // 错误分析函数
+    function [199:0] get_error_analysis;
+        input [4:0] reg_num;
+        input [31:0] expected;
+        input [31:0] actual;
+        reg [31:0] diff;
+        begin
+            diff = actual - expected;
+            case (reg_num)
+                4: get_error_analysis = "SUB指令可能有误";
+                29: get_error_analysis = "内存地址计算错误";
+                30: get_error_analysis = "内存加载错误";
+                31: get_error_analysis = "计数器逻辑错误";
+                default: begin
+                    if (diff[31:16] == 16'h0000 || diff[31:16] == 16'hffff)
+                        get_error_analysis = "可能低16位错误";
+                    else if (diff[15:0] == 16'h0000)
+                        get_error_analysis = "可能高16位错误";
+                    else
+                        get_error_analysis = "全字错误";
+                end
+            endcase
+        end
+    endfunction
+    
+    // 分析关键差异
+    task analyze_critical_differences;
+        reg [31:0] x4_diff, x29_diff, x30_diff, x31_diff;
+        begin
+            x4_diff = get_register_value(4) - standard_registers[4];
+            x29_diff = get_register_value(29) - standard_registers[29];
+            x30_diff = get_register_value(30) - standard_registers[30];
+            x31_diff = get_register_value(31) - standard_registers[31];
+            
+            $display("1. x4寄存器差异:");
+            $display("   标准: 0x%08x, 实际: 0x%08x, 差值: 0x%08x", 
+                    standard_registers[4], get_register_value(4), x4_diff);
+            $display("   分析: 这是SUB指令结果，可能ALU减法运算有误");
+            $display("   二进制: 标准=%032b", standard_registers[4]);
+            $display("          实际=%032b", get_register_value(4));
+            
+            $display("\n2. x29寄存器差异:");
+            $display("   标准: 0x%08x, 实际: 0x%08x, 差值: 0x%08x", 
+                    standard_registers[29], get_register_value(29), x29_diff);
+            $display("   分析: 这是内存操作相关，可能地址计算或存储有误");
+            
+            $display("\n3. x30寄存器差异:");
+            $display("   标准: 0x%08x, 实际: 0x%08x, 差值: 0x%08x", 
+                    standard_registers[30], get_register_value(30), x30_diff);
+            $display("   分析: 这是累加结果，可能内存加载或ADD指令有误");
+            
+            $display("\n4. x31寄存器差异:");
+            $display("   标准: 0x%08x, 实际: 0x%08x, 差值: 0x%08x", 
+                    standard_registers[31], get_register_value(31), x31_diff);
+            $display("   分析: 这是计数器，可能分支跳转次数不对");
+        end
+    endtask
+    
+    // 提供调试建议
+    task provide_debug_suggestions;
+        input integer critical_errors;
+        begin
+            $display("基于当前错误模式，建议按以下顺序调试:");
+            
+            if (get_register_value(4) != standard_registers[4]) begin
+                $display("1. 【优先】检查ALU减法运算:");
+                $display("   - 检查rtl/alu.v中SUB操作的实现");
+                $display("   - 验证40838233指令(SUB x4, x7, x8)的执行");
+                $display("   - 确认操作数: x7=0x401e1042, x8=0x7fffffff");
+                $display("   - 期望结果: 0x401e1042 - 0x7fffffff = 0x5980edb5");
+            end
+            
+            if (get_register_value(29) != standard_registers[29]) begin
+                $display("2. 检查内存操作逻辑:");
+                $display("   - 检查内存地址计算是否正确");
+                $display("   - 验证SW/LW指令的地址生成");
+                $display("   - 检查rtl/pipeline_stages/mem_stage.v");
+            end
+            
+            if (get_register_value(30) != standard_registers[30]) begin
+                $display("3. 检查内存加载指令:");
+                $display("   - 检查LW指令实现");
+                $display("   - 验证数据内存读取逻辑");
+                $display("   - 检查rtl/memory/data_memory.v");
+            end
+            
+            if (get_register_value(31) != standard_registers[31]) begin
+                $display("4. 检查分支跳转逻辑:");
+                $display("   - 检查BEQ/BNE指令条件判断");
+                $display("   - 验证分支目标地址计算");
+                $display("   - 检查rtl/pipeline_stages/mem_stage.v分支逻辑");
+            end
+            
+            $display("\n关键指令跟踪建议:");
+            $display("- 使用+trace_instr选项运行仿真");
+            $display("- 重点观察PC=0x118处的SUB指令执行");
+            $display("- 检查内存操作阶段(PC=0x198-0x1EC)");
+            $display("- 监控分支指令执行(PC=0x200之后)");
         end
     endtask
     
@@ -283,31 +473,6 @@ module cpu_riscv_tb;
                 $display("\n⚠ 测试未完全完成，停在阶段 %0d", test_stage);
             end
             $display("========================================");
-        end
-    endtask
-    
-    // 最终验证任务
-    task final_validation;
-        begin
-            $display("\n=== 最终验证结果 ===");
-            $display("PC最终位置: 0x%08x", pc_if);
-            $display("对应指令编号: %0d", (pc_if >> 2) + 1);
-            $display("实际执行指令数: %d", instruction_count);
-            $display("测试覆盖率: %.1f%%", real'(instruction_count) * 100.0 / 232.0);
-            
-            // 验证关键寄存器值与期望值对比
-            $display("\n关键寄存器最终值验证:");
-            $display("x1: 0x%08x", u_cpu_top.u_register_file.registers[1]);
-            $display("x2: 0x%08x", u_cpu_top.u_register_file.registers[2]);
-            $display("x28: 0x%08x (内存基址寄存器)", u_cpu_top.u_register_file.registers[28]);
-            $display("x30: 0x%08x (累加结果)", u_cpu_top.u_register_file.registers[30]);
-            $display("x31: 0x%08x (计数器)", u_cpu_top.u_register_file.registers[31]);
-            
-            if (instruction_count >= 230) begin
-                $display("✓ CPU核心功能验证通过 - 成功执行完整指令集");
-            end else begin
-                $display("⚠ 测试未完全执行，建议检查分支跳转逻辑");
-            end
         end
     endtask
     
