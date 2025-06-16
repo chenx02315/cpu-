@@ -17,6 +17,9 @@
 `define OPCODE_IMM      7'b0010011  // Immediate Arithmetic
 `define OPCODE_ARITH    7'b0110011  // Register-Register Arithmetic
 
+// 添加缺失的宏定义
+`define OPCODE_NOP      `OPCODE_IMM  // NOP指令的操作码与ADDI相同 (OPCODE_IMM)
+
 //=================================================
 // 功能码定义 (funct3)
 //=================================================
@@ -121,9 +124,9 @@
 //=================================================
 // 前推选择信号定义
 //=================================================
-`define FORWARD_NO          2'b00   // 不前推
 `define FORWARD_EX_MEM      2'b01   // 从EX/MEM前推
 `define FORWARD_MEM_WB      2'b10   // 从MEM/WB前推
+`define FORWARD_NONE        2'b00   // 无前推，使用寄存器值
 
 //=================================================
 // 寄存器地址定义

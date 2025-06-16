@@ -34,11 +34,7 @@ module instruction_memory (
         if ($test$plusargs("load_hex")) begin
             $display("尝试从hex文件加载测试用例...");
             // 尝试多个可能的路径
-            if ($fopen("riscv.hex", "r") != 0) begin
-                $readmemh("riscv.hex", imem);
-                hex_loaded = 1'b1;
-                $display("✓ 从当前目录加载hex文件成功");
-            end else if ($fopen("test/riscv_case/riscv.hex", "r") != 0) begin
+            if ($fopen("test/riscv_case/riscv.hex", "r") != 0) begin
                 $readmemh("test/riscv_case/riscv.hex", imem);
                 hex_loaded = 1'b1;
                 $display("✓ 从test目录加载hex文件成功");

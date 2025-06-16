@@ -26,6 +26,8 @@ module id_ex_register (
     input  wire        branch_id_i,
     input  wire        reg_write_id_i,
     input  wire [1:0]  mem_to_reg_id_i,
+    input  wire [1:0]  forward_a_select_id_i, // New input
+    input  wire [1:0]  forward_b_select_id_i, // New input
     
     // EX stage outputs
     output reg  [31:0] pc_ex_o,
@@ -46,7 +48,9 @@ module id_ex_register (
     output reg         mem_write_ex_o,
     output reg         branch_ex_o,
     output reg         reg_write_ex_o,
-    output reg  [1:0]  mem_to_reg_ex_o
+    output reg  [1:0]  mem_to_reg_ex_o,
+    output reg  [1:0]  forward_a_select_ex_o, // New output
+    output reg  [1:0]  forward_b_select_ex_o  // New output
 );
 
     always @(posedge clk or negedge rst_n) begin
@@ -70,6 +74,8 @@ module id_ex_register (
             branch_ex_o <= 1'b0;
             reg_write_ex_o <= 1'b0;
             mem_to_reg_ex_o <= `MEM_TO_REG_ALU;
+            forward_a_select_ex_o <= `FORWARD_NONE; // Reset to NOP/None
+            forward_b_select_ex_o <= `FORWARD_NONE; // Reset to NOP/None
         end
         else if (flush_i) begin
             pc_ex_o <= 32'h00000000;
@@ -91,6 +97,8 @@ module id_ex_register (
             branch_ex_o <= 1'b0;
             reg_write_ex_o <= 1'b0;
             mem_to_reg_ex_o <= `MEM_TO_REG_ALU;
+            forward_a_select_ex_o <= `FORWARD_NONE;
+            forward_b_select_ex_o <= `FORWARD_NONE;
         end
         else if (!stall_i) begin
             pc_ex_o <= pc_id_i;
@@ -112,6 +120,8 @@ module id_ex_register (
             branch_ex_o <= branch_id_i;
             reg_write_ex_o <= reg_write_id_i;
             mem_to_reg_ex_o <= mem_to_reg_id_i;
+            forward_a_select_ex_o <= forward_a_select_id_i; // Register forwarding signal
+            forward_b_select_ex_o <= forward_b_select_id_i; // Register forwarding signal
         end
         // stall时保持当前值不变
     end

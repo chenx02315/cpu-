@@ -77,6 +77,8 @@ module cpu_top (
     wire        branch_id_ex;
     wire        reg_write_id_ex;
     wire [1:0]  mem_to_reg_id_ex;
+    wire [1:0]  forward_a_select_ex_reg;
+    wire [1:0]  forward_b_select_ex_reg;
     
     // EX Stage signals
     wire [31:0] pc_ex_mem;
@@ -134,9 +136,13 @@ module cpu_top (
     wire        id_ex_flush_hazard;
     wire        id_ex_stall_hazard;
     wire        pc_stall_hazard;
-    wire [1:0]  forward_a_select_hazard;
-    wire [1:0]  forward_b_select_hazard;
+    wire [1:0]  forward_a_select_hazard_out; // Renamed from forward_a_select_hazard
+    wire [1:0]  forward_b_select_hazard_out; // Renamed from forward_b_select_hazard
     
+    // Forwarding signals for ID/EX register
+    wire [1:0]  forward_a_select_to_idex;
+    wire [1:0]  forward_b_select_to_idex;
+
     // Forwarding signals
     wire [31:0] forward_data_a;
     wire [31:0] forward_data_b;
@@ -261,6 +267,8 @@ module cpu_top (
         .branch_id_i(branch_id),
         .reg_write_id_i(reg_write_id),
         .mem_to_reg_id_i(mem_to_reg_id),
+        .forward_a_select_id_i(forward_a_select_to_idex), // Connect to hazard unit output
+        .forward_b_select_id_i(forward_b_select_to_idex), // Connect to hazard unit output
         .pc_ex_o(pc_ex_from_reg),
         .pc_plus_4_ex_o(pc_plus_4_ex_from_reg),
         .operand_a_ex_o(operand_a_id_ex),
@@ -279,7 +287,9 @@ module cpu_top (
         .mem_write_ex_o(mem_write_id_ex),
         .branch_ex_o(branch_id_ex),
         .reg_write_ex_o(reg_write_id_ex),
-        .mem_to_reg_ex_o(mem_to_reg_id_ex)
+        .mem_to_reg_ex_o(mem_to_reg_id_ex),
+        .forward_a_select_ex_o(forward_a_select_ex_reg), // Output from ID/EX reg
+        .forward_b_select_ex_o(forward_b_select_ex_reg)  // Output from ID/EX reg
     );
     
     // Instantiate Hazard Unit - 修复：添加缺少的端口连接
@@ -287,11 +297,15 @@ module cpu_top (
         .id_rs1_addr_i(rs1_addr_rf),
         .id_rs2_addr_i(rs2_addr_rf),
         .id_mem_read_i(mem_read_id),
+        .id_use_rs1_i(opcode_id != `OPCODE_LUI && opcode_id != `OPCODE_AUIPC && opcode_id != `OPCODE_JAL),
+        .id_use_rs2_i(opcode_id == `OPCODE_ARITH || opcode_id == `OPCODE_BRANCH || opcode_id == `OPCODE_STORE),
         .ex_rd_addr_i(rd_addr_id_ex),
         .ex_reg_write_i(reg_write_id_ex),
         .ex_mem_read_i(mem_read_id_ex),
+        .ex_is_nop_i(opcode_id_ex == `OPCODE_NOP),
         .mem_rd_addr_i(rd_addr_ex_mem_reg),
         .mem_reg_write_i(reg_write_ex_mem_reg),
+        .mem_is_nop_i(opcode_ex_mem_reg == `OPCODE_NOP),
         .branch_jump_request_mem_i(branch_jump_request_mem),
         .pc_sel_decision_mem_i(pc_sel_decision_mem),
         .wb_rd_addr_i(rd_addr_mem_wb),
@@ -301,53 +315,21 @@ module cpu_top (
         .if_id_flush_o(if_id_flush_hazard),
         .id_ex_stall_o(id_ex_stall_hazard),
         .id_ex_flush_o(id_ex_flush_hazard),
-        .forward_a_select_o(forward_a_select_hazard),
-        .forward_b_select_o(forward_b_select_hazard),
+        .forward_a_select_o(forward_a_select_to_idex),
+        .forward_b_select_o(forward_b_select_to_idex),
         .pc_sel_final_o(pc_sel_final_hazard)
     );
 
     // 关键调试：监控前推信号传递 - 增强版
     always @(*) begin
         // 监控SUB指令的前推信号传递
-        if (rs1_addr_rf == 5'd7 && rs2_addr_rf == 5'd8 && opcode_id == 7'h33) begin
+        if (rs1_addr_rf == 5'd7 && rs2_addr_rf == 5'd8 && opcode_id == 7'h33) begin // This is for instruction in ID stage
             $display("========================================");
-            $display("[CPU_TOP_ENHANCED] SUB指令前推信号传递监控:");
+            $display("[CPU_TOP_ENHANCED] SUB指令 (in ID) 前推信号传递监控:");
             $display("  PC_ID: 0x%08x", pc_id);
             $display("  SUB指令: rs1(x7)=%d, rs2(x8)=%d", rs1_addr_rf, rs2_addr_rf);
-            $display("  冒险单元输出: forward_a=%d, forward_b=%d", 
-                    forward_a_select_hazard, forward_b_select_hazard);
-            $display("  传递给EX阶段: forward_a=%d, forward_b=%d",
-                    forward_a_select_hazard, forward_b_select_hazard);
-            
-            // 详细的前推数据来源分析
-            $display("  前推数据来源分析:");
-            $display("    EX/MEM结果: 0x%08x (forward_data_a)", ex_result_ex_mem_reg);
-            $display("    WB写回数据: 0x%08x (forward_data_b)", write_data_wb);
-            $display("    实际传递: data_a=0x%08x, data_b=0x%08x",
-                    forward_data_a, forward_data_b);
-            
-            // 检查寄存器文件的当前值
-            $display("  寄存器文件当前值:");
-            $display("    x7=0x%08x (应为0xc41f1efb)", rs1_data_rf);
-            $display("    x8=0x%08x (应为0x6a9e3146)", rs2_data_rf);
-            
-            // 检查流水线阶段状态
-            $display("  流水线状态:");
-            $display("    EX阶段rd=%d, reg_write=%d", rd_addr_id_ex, reg_write_id_ex);
-            $display("    MEM阶段rd=%d, reg_write=%d", rd_addr_ex_mem_reg, reg_write_ex_mem_reg);
-            $display("    WB阶段rd=%d, reg_write=%d", rd_addr_mem_wb, reg_write_mem_wb);
-            
-            // 前推选择逻辑验证
-            $display("  前推选择逻辑验证:");
-            if (forward_a_select_hazard == 2'b00 && forward_b_select_hazard == 2'b00) begin
-                $display("    ✓ 无前推，应使用寄存器文件原值");
-            end else begin
-                $display("    ✗ 有前推，检查前推条件:");
-                $display("      EX前推条件: rs1=%d vs ex_rd=%d, rs2=%d vs ex_rd=%d", 
-                        rs1_addr_rf, rd_addr_id_ex, rs2_addr_rf, rd_addr_id_ex);
-                $display("      MEM前推条件: rs1=%d vs mem_rd=%d, rs2=%d vs mem_rd=%d",
-                        rs1_addr_rf, rd_addr_ex_mem_reg, rs2_addr_rf, rd_addr_ex_mem_reg);
-            end
+            $display("  冒险单元输出 (for ID stage instr): forward_a=%d, forward_b=%d", 
+                    forward_a_select_to_idex, forward_b_select_to_idex);
             $display("========================================");
         end
     end
@@ -374,8 +356,8 @@ module cpu_top (
         .mem_to_reg_ex_i(mem_to_reg_id_ex),
         .forward_data_a_i(forward_data_a),
         .forward_data_b_i(forward_data_b),
-        .forward_a_select_i(forward_a_select_hazard),
-        .forward_b_select_i(forward_b_select_hazard),
+        .forward_a_select_i(forward_a_select_ex_reg), // Use registered value
+        .forward_b_select_i(forward_b_select_ex_reg), // Use registered value
         .pc_for_mem_o(pc_ex_mem),
         .pc_plus_4_mem_o(pc_plus_4_ex_mem),
         .ex_result_mem_o(ex_result_ex_mem),
@@ -437,7 +419,7 @@ module cpu_top (
         .read_en_i(mem_read_ex_mem_reg),
         .write_en_i(mem_write_ex_mem_reg),
         .funct3_i(funct3_ex_mem_reg),
-        .read_data_o(data_mem_read_data)
+        .read_data_o(data_mem_read_data)    // 连接读数据输出
     );
     
     // Instantiate MEM Stage - 修复：使用正确的端口名称
@@ -450,14 +432,15 @@ module cpu_top (
         .immediate_ex_mem_i(immediate_ex_mem_reg),
         .rd_addr_mem_i(rd_addr_ex_mem_reg),
         .funct3_mem_i(funct3_ex_mem_reg),
-        .opcode_ex_mem_i(opcode_ex_mem_reg),     // 修复：使用正确的端口名
+        .opcode_ex_mem_i(opcode_ex_mem_reg),
         .mem_read_mem_i(mem_read_ex_mem_reg),
         .mem_write_mem_i(mem_write_ex_mem_reg),
         .branch_ctrl_mem_i(branch_ctrl_ex_mem_reg),
         .reg_write_mem_i(reg_write_ex_mem_reg),
         .mem_to_reg_mem_i(mem_to_reg_ex_mem_reg),
         .data_mem_read_data_i(data_mem_read_data),
-        .mem_to_reg_wb_o(mem_to_reg_mem_wb),
+        
+        .mem_to_reg_wb_o(mem_to_reg_mem_wb), // To MEM/WB reg
         .branch_jump_request_o(branch_jump_request_mem),
         .pc_sel_decision_o(pc_sel_decision_mem),
         .branch_jump_target_addr_o(branch_jump_target_from_mem),
@@ -468,20 +451,23 @@ module cpu_top (
     mem_wb_register u_mem_wb_register (
         .clk(clk),
         .rst_n(rst_n),
-        .stall_i(1'b0),
-        .flush_i(1'b0),
-        .pc_plus_4_mem_i(pc_plus_4_ex_mem_reg),
+        .stall_i(1'b0), // Assuming MEM/WB never stalls for now
+        .flush_i(1'b0), // Assuming MEM/WB is not directly flushed by hazard unit for now
+        
+        .pc_plus_4_mem_i(pc_plus_4_ex_mem_reg), // pc_plus_4 from EX/MEM
         .mem_read_data_mem_i(data_mem_read_data),
         .ex_result_mem_i(ex_result_ex_mem_reg),
         .rd_addr_mem_i(rd_addr_ex_mem_reg),
         .reg_write_mem_i(reg_write_ex_mem_reg),
-        .mem_to_reg_mem_i(mem_to_reg_mem_wb),
+        .mem_to_reg_mem_i(mem_to_reg_mem_wb), // mem_to_reg_mem_wb from mem_stage
+        
         .pc_plus_4_wb_o(pc_plus_4_mem_wb),
         .mem_read_data_wb_o(mem_read_data_mem_wb),
         .ex_result_wb_o(ex_result_mem_wb),
         .rd_addr_wb_o(rd_addr_mem_wb),
         .reg_write_wb_o(reg_write_mem_wb),
-        .mem_to_reg_wb_o(mem_to_reg_mem_wb)
+        .mem_to_reg_wb_o(mem_to_reg_mem_wb) // This output name was duplicated, should be distinct if used as input to wb_stage
+                                            // Corrected: mem_to_reg_wb_o is the output of mem_wb_register
     );
     
     // Instantiate WB Stage
@@ -491,7 +477,8 @@ module cpu_top (
         .ex_result_wb_i(ex_result_mem_wb),
         .rd_addr_wb_i(rd_addr_mem_wb),
         .reg_write_wb_i(reg_write_mem_wb),
-        .mem_to_reg_wb_i(mem_to_reg_mem_wb),
+        .mem_to_reg_wb_i(mem_to_reg_mem_wb), // Input from MEM/WB register's output
+        
         .reg_write_o(reg_write_wb),
         .rd_addr_o(rd_addr_wb),
         .write_data_o(write_data_wb)
