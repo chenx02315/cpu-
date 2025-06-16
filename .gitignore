@@ -5,6 +5,8 @@ simulation_output/
 csrc/
 simple_sub_test.daidir/
 tools/
+doc/
+docs/
 # 补充忽略常见临时文件（可选）
 *.log
 *.vcd

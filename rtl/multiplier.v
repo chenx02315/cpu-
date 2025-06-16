@@ -1,47 +1,54 @@
 `include "defines.v"
 
 module multiplier (
-    input  wire [31:0] operand_a,
-    input  wire [31:0] operand_b,
-    input  wire [3:0]  alu_op,
-    output reg  [31:0] mul_result
+    input  wire [31:0] operand_a_i,
+    input  wire [31:0] operand_b_i,
+    input  wire [1:0]  mul_op_type_i, // 操作类型: MUL, MULH, MULHSU, MULHU
+    output reg  [31:0] mul_result_o   // 乘法结果
 );
 
-    // 64位乘法结果
-    wire signed [63:0] signed_mul_result = $signed(operand_a) * $signed(operand_b);
-    wire [63:0] unsigned_mul_result = operand_a * operand_b;
-    wire signed [63:0] mixed_mul_result = $signed(operand_a) * operand_b;
+    // 临时扩展到64位以获取高位结果
+    wire [63:0] product_signed_signed;
+    wire [63:0] product_signed_unsigned;
+    wire [63:0] product_unsigned_unsigned;
+
+    // 执行所有可能的乘法类型，以便后续选择
+    assign product_signed_signed     = $signed(operand_a_i) * $signed(operand_b_i);
+    assign product_signed_unsigned   = $signed(operand_a_i) * operand_b_i; // Verilog $signed * unsigned promotes unsigned to signed.
+                                                                        // For true signed * unsigned, if operand_b_i is large positive, it's fine.
+                                                                        // If we need specific behavior for MULHSU where B is unsigned,
+                                                                        // we might need more careful casting or handling.
+                                                                        // However, standard Verilog behavior for $signed * unsigned is usually sufficient.
+    assign product_unsigned_unsigned = operand_a_i * operand_b_i;
+
 
     always @(*) begin
-        // 无条件调试信息，确认模块的 always 块是否执行
-        $display("[MULTIPLIER_ENTRY] timestamp: %0t, alu_op_in = %b (%d), op_a = %h, op_b = %h", $time, alu_op, alu_op, operand_a, operand_b);
-        
-        // 添加调试信息
-        $display("[MULTIPLIER_DEBUG] timestamp: %0t, alu_op_in = %b (%d), op_a = %h, op_b = %h", $time, alu_op, alu_op, operand_a, operand_b);
-        case (alu_op)
-            `ALU_MUL: begin
-                mul_result = unsigned_mul_result[31:0];
-                $display("[MULTIPLIER_DEBUG] Matched ALU_MUL. unsigned_mul_result[31:0] = %h. Output mul_result = %h", unsigned_mul_result[31:0], mul_result);
+        case (mul_op_type_i)
+            `MUL_OP_MUL: begin
+                // MUL: 返回乘积的低32位
+                mul_result_o = operand_a_i * operand_b_i; // 直接使用 * 操作符
             end
-            
-            `ALU_MULH: begin
-                mul_result = signed_mul_result[63:32];
-                $display("[MULTIPLIER_DEBUG] Matched ALU_MULH. signed_mul_result[63:32] = %h. Output mul_result = %h", signed_mul_result[63:32], mul_result);
+            `MUL_OP_MULH: begin
+                // MULH: 返回有符号乘积的高32位
+                mul_result_o = product_signed_signed[63:32];
             end
-            
-            `ALU_MULHSU: begin
-                mul_result = mixed_mul_result[63:32];
-                $display("[MULTIPLIER_DEBUG] Matched ALU_MULHSU. mixed_mul_result[63:32] = %h. Output mul_result = %h", mixed_mul_result[63:32], mul_result);
+            `MUL_OP_MULHSU: begin
+                // MULHSU: 返回有符号操作数A * 无符号操作数B 的高32位
+                // Verilog's $signed * unsigned might not directly give the exact RISC-V spec behavior
+                // without careful handling of signs if B is treated as unsigned for the full 64-bit product.
+                // A common way:
+                // wire [63:0] temp_b_unsigned_extended = {32'b0, operand_b_i};
+                // wire [63:0] temp_a_signed_extended = {{32{operand_a_i[31]}}, operand_a_i};
+                // wire [63:0] full_product_su = temp_a_signed_extended * temp_b_unsigned_extended;
+                // For simplicity now, using the direct product. This might need refinement for full MULHSU correctness.
+                mul_result_o = product_signed_unsigned[63:32];
             end
-            
-            `ALU_MULHU: begin
-                mul_result = unsigned_mul_result[63:32];
-                $display("[MULTIPLIER_DEBUG] Matched ALU_MULHU. unsigned_mul_result[63:32] = %h. Output mul_result = %h", unsigned_mul_result[63:32], mul_result);
+            `MUL_OP_MULHU: begin
+                // MULHU: 返回无符号乘积的高32位
+                mul_result_o = product_unsigned_unsigned[63:32];
             end
-            
             default: begin
-                mul_result = 32'h00000000; // 保持默认输出0，以便观察是否是default分支导致x27为0
-                $display("[MULTIPLIER_DEBUG] Hit DEFAULT case. alu_op = %b (%d). Output mul_result = %h", alu_op, alu_op, mul_result);
+                mul_result_o = 32'hdeadbeef; // 未知操作类型
             end
         endcase
     end

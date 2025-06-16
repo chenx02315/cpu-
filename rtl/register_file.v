@@ -39,9 +39,17 @@ module register_file (
     
     // 同步写入，x0不可写
     always @(posedge clk) begin
-        if (rst_n && reg_write_i && rd_addr_i != 5'b0) begin
-            registers[rd_addr_i] <= write_data_i;
-            $display("[REG] 写入 x%0d = 0x%08x", rd_addr_i, write_data_i);
+        if (rst_n == 1'b0) begin
+            // 异步复位：清除所有寄存器
+            for (i = 1; i < 32; i = i + 1) begin
+                registers[i] <= 32'h00000000;
+            end
+        end else begin
+            if (reg_write_i && rd_addr_i != 5'b0) begin
+                registers[rd_addr_i] <= write_data_i;
+                $display("[REG_FILE_WRITE_DEBUG] @%0t: Writing to x%0d, Data=0x%08x (reg_write_i=%b)",
+                         $time, rd_addr_i, write_data_i, reg_write_i);
+            end
         end
     end
 

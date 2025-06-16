@@ -31,7 +31,7 @@ module ex_stage (
     // Outputs to EX/MEM Register
     output reg [31:0] pc_for_mem_o,
     output reg [31:0] pc_plus_4_mem_o,
-    output reg [31:0] ex_result_mem_o,
+    output reg [31:0] ex_result_mem_o,     // This will now come from the alu_mul_mux
     output reg        zero_flag_mem_o,
     output reg [31:0] reg2_data_mem_o,      // Data to be stored (rs2_data)
     output reg [31:0] immediate_mem_o,    // Pass immediate for potential use in MEM (e.g. offset for branch)
@@ -55,6 +55,10 @@ module ex_stage (
     reg [31:0] operand_a_forwarded_local;
     reg [31:0] operand_b_forwarded_local;
 
+    // Signals for Multiplier and MUX
+    wire [31:0] mul_result_internal;
+    wire [1:0]  mul_op_type_internal;
+    wire [31:0] final_ex_result; // Output of the ex_alu_mul_mux
 
     // ALU instantiation
     alu u_alu (
@@ -64,14 +68,35 @@ module ex_stage (
         .alu_result(alu_result_internal),
         .zero_flag(zero_flag_internal)
     );
+
+    // Derive mul_op_type for the multiplier module
+    assign mul_op_type_internal = (alu_op_ex_i == `ALU_MUL)   ? `MUL_OP_MUL :
+                                  (alu_op_ex_i == `ALU_MULH)  ? `MUL_OP_MULH :
+                                  (alu_op_ex_i == `ALU_MULHSU)? `MUL_OP_MULHSU :
+                                  (alu_op_ex_i == `ALU_MULHU) ? `MUL_OP_MULHU :
+                                  `MUL_OP_MUL; // Default, should not be hit if alu_op is for mul
+
+    // Instantiate Multiplier
+    multiplier u_multiplier (
+        .operand_a_i(alu_operand_a),      // Use forwarded operand_a
+        .operand_b_i(alu_operand_b),      // Use forwarded operand_b (or immediate)
+        .mul_op_type_i(mul_op_type_internal),
+        .mul_result_o(mul_result_internal)
+    );
+
+    // Instantiate ALU and Multiplier result selection MUX
+    ex_alu_mul_mux u_ex_alu_mul_mux (
+        .alu_op(alu_op_ex_i),             // To determine if it's a multiply op
+        .alu_result(alu_result_internal),
+        .mul_result(mul_result_internal),
+        .final_result(final_ex_result)
+    );
     
     // Combinational logic for EX stage
     always @(*) begin
         // ** FIX: Default assignment for forwarded operands **
-        // These lines ensure that if no forwarding is selected,
-        // the operands from the ID/EX register are used.
         operand_a_forwarded_local = operand_a_ex_i;
-        operand_b_forwarded_local = operand_b_src_ex_i; // This is rs2_data if alu_src is register
+        operand_b_forwarded_local = operand_b_src_ex_i; 
 
         // Forwarding logic for operand A
         if (forward_a_select_i == `FORWARD_EX_MEM) begin
@@ -80,43 +105,35 @@ module ex_stage (
             operand_a_forwarded_local = forward_data_b_i;
         end
 
-        // Forwarding logic for operand B (only if not using immediate for ALU op B)
+        // Forwarding logic for operand B
         if (forward_b_select_i == `FORWARD_EX_MEM) begin
             operand_b_forwarded_local = forward_data_a_i;
         end else if (forward_b_select_i == `FORWARD_MEM_WB) begin
             operand_b_forwarded_local = forward_data_b_i;
         end
         
-        // Select ALU operands
+        // Select ALU operands (these are also inputs to multiplier)
         alu_operand_a = operand_a_forwarded_local;
         
-        if (alu_src_ex_i) begin // If alu_src is 1, operand B is immediate
+        if (alu_src_ex_i) begin 
             alu_operand_b = immediate_ex_i;
-        end else begin // Otherwise, operand B is from register (possibly forwarded)
+        end else begin 
             alu_operand_b = operand_b_forwarded_local;
         end
 
         // Pass-through control signals and data to EX/MEM register
         pc_for_mem_o        = pc_ex_i;
         pc_plus_4_mem_o     = pc_plus_4_ex_i;
-        ex_result_mem_o     = alu_result_internal;
+        ex_result_mem_o     = final_ex_result; // MODIFIED: Use output of ALU/MUL MUX
         zero_flag_mem_o     = zero_flag_internal;
-        reg2_data_mem_o     = operand_b_forwarded_local; // For store instructions, pass rs2_data (potentially forwarded)
-                                                       // Note: if alu_src_ex_i is 1, operand_b_src_ex_i might be garbage if not handled.
-                                                       // For stores, alu_src is 1, but operand_b_src_ex_i should be rs2_data.
-                                                       // Control unit should ensure alu_src is 0 for R-type and Store.
-                                                       // For Store, operand_b_src_ex_i is rs2_data.
-                                                       // The immediate is used for address calculation with rs1_data.
-                                                       // So, reg2_data_mem_o should be operand_b_src_ex_i (original rs2 value from ID/EX)
-                                                       // if it's a store.
-                                                       // Let's pass the original operand_b_src_ex_i for stores.
-        if (mem_write_ex_i) begin // If it's a store instruction
-             reg2_data_mem_o = operand_b_src_ex_i; // Pass the original rs2 data for store
+                                                       
+        if (mem_write_ex_i) begin 
+             reg2_data_mem_o = operand_b_src_ex_i; 
         end else begin
-             reg2_data_mem_o = operand_b_forwarded_local; // For other uses, pass the (potentially) forwarded value
+             reg2_data_mem_o = operand_b_forwarded_local; 
         end
 
-        immediate_mem_o     = immediate_ex_i; // Pass immediate for branch offset calculation in MEM
+        immediate_mem_o     = immediate_ex_i; 
         rd_addr_mem_o       = rd_addr_ex_i;
         funct3_mem_o        = funct3_ex_i;
         opcode_mem_o        = opcode_ex_i;
@@ -126,19 +143,14 @@ module ex_stage (
         reg_write_mem_o     = reg_write_ex_i;
         mem_to_reg_mem_o    = mem_to_reg_ex_i;
 
-        // Debug: This is where the testbench's EX_SUPER_DEBUG would sample from
-        // To verify, you can add $display here too.
-        // Example:
-        // if (pc_ex_i == 32'h00000118) begin
-        //     $display("[EX_STAGE_INTERNAL_DEBUG] @ %0t", $time);
-        //     $display("  Inputs: op_a_ex_i=0x%h, op_b_src_ex_i=0x%h", operand_a_ex_i, operand_b_src_ex_i);
-        //     $display("  Fwd Sel: fwd_a_sel=%b, fwd_b_sel=%b", forward_a_select_i, forward_b_select_i);
-        //     $display("  Fwd Data: fwd_data_a=0x%h, fwd_data_b=0x%h", forward_data_a_i, forward_data_b_i);
-        //     $display("  Locals: op_a_fwd_local=0x%h, op_b_fwd_local=0x%h", operand_a_forwarded_local, operand_b_forwarded_local);
-        //     $display("  ALU Inputs: alu_op_a=0x%h, alu_op_b=0x%h", alu_operand_a, alu_operand_b);
-        //     $display("  ALU Ctrl: alu_src_ex_i=%b, alu_op_ex_i=%b", alu_src_ex_i, alu_op_ex_i);
-        // end
-
+        // Debugging information for multiplication
+        if (alu_op_ex_i == `ALU_MUL || alu_op_ex_i == `ALU_MULH || alu_op_ex_i == `ALU_MULHSU || alu_op_ex_i == `ALU_MULHU) begin
+            $display("[EX_STAGE_MUL_DEBUG] PC_EX=0x%h, ALU_OP=%b, RD=%d, REG_WRITE=%b", pc_ex_i, alu_op_ex_i, rd_addr_ex_i, reg_write_ex_i);
+            $display("    MUL_Inputs: A=0x%h, B=0x%h, MulOpType=%b", alu_operand_a, alu_operand_b, mul_op_type_internal);
+            $display("    MUL_Output_Internal (from multiplier): 0x%h", mul_result_internal);
+            $display("    ALU_Output_Internal (from ALU for this op): 0x%h", alu_result_internal);
+            $display("    EX_ALU_MUL_MUX_Output (final_ex_result): 0x%h", final_ex_result);
+        end
     end
 
 endmodule

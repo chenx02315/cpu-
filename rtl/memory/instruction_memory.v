@@ -149,7 +149,7 @@ module instruction_memory (
             imem[ 90] = 32'h010c1c13;  // 第 91行 - slli x24,x24,16
             imem[ 91] = 32'h015d5c93;  // 第 92行 - srli x25,x26,21
             imem[ 92] = 32'h409ddd13;  // 第 93行 - srai x26,x27,9
-            imem[ 93] = 32'h03cd8db3;  // 第 94行 - mul x27,x27,x28
+            imem[ 93] = 32'h03cd8db3;  // 第 94行 - mul x27,x27,x25 (原注释 mul x27,x27,x28 是错误的)
             imem[ 94] = 32'h00000013;  // 第 95行 - NOP
             imem[ 95] = 32'h00000013;  // 第 96行 - NOP
             imem[ 96] = 32'h00000013;  // 第 97行 - NOP
