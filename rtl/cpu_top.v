@@ -154,6 +154,49 @@ module cpu_top (
     assign forward_data_a = ex_result_ex_mem_reg;  // EX/MEM前推数据
     assign forward_data_b = write_data_wb;         // MEM/WB前推数据
     
+    // 新增调试逻辑：监控 lw 指令的控制信号传递
+    // 当 lw 指令 (PC=0x198 或 PC=0x19c) 在 ID 阶段的输出 (即 ID/EX 寄存器的输入)
+    always @(*) begin
+        if (pc_id == 32'h00000198 || pc_id == 32'h0000019c) begin
+            $display("[CPU_TOP_ID_OUT_LW] PC_ID=0x%h, Instr=0x%h", pc_id, instruction_id);
+            $display("    ID_Out->IDEX_In: opcode=0x%x, rd=%d, mem_read=%b, reg_write=%b, mem_to_reg=%b, alu_op=0x%x, alu_src=%b",
+                     opcode_id, rd_addr_id, mem_read_id, reg_write_id, mem_to_reg_id, alu_op_id, alu_src_id);
+        end
+    end
+
+    // 当 lw 指令 (PC=0x198 或 PC=0x19c) 在 ID/EX 寄存器的输出 (即 EX 阶段的输入)
+    always @(*) begin
+        if (pc_ex_from_reg == 32'h00000198 || pc_ex_from_reg == 32'h0000019c) begin
+            $display("[CPU_TOP_IDEX_OUT_LW] PC_EX=0x%h", pc_ex_from_reg);
+            $display("    IDEX_Out->EX_In: opcode=0x%x, rd=%d, mem_read=%b, reg_write=%b, mem_to_reg=%b, alu_op=0x%x, alu_src=%b",
+                     opcode_id_ex, rd_addr_id_ex, mem_read_id_ex, reg_write_id_ex, mem_to_reg_id_ex, alu_op_id_ex, alu_src_id_ex);
+        end
+    end
+
+    // 当 lw 指令 (PC=0x198 或 PC=0x19c) 在 EX/MEM 寄存器的输出 (即 MEM 阶段的输入)
+    always @(*) begin
+        if (pc_ex_mem_reg == 32'h00000198 || pc_ex_mem_reg == 32'h0000019c) begin
+            $display("[CPU_TOP_EXMEM_OUT_LW] PC_MEM=0x%h", pc_ex_mem_reg);
+            $display("    EXMEM_Out->MEM_In: opcode=0x%x, rd=%d, mem_read=%b, reg_write=%b, mem_to_reg=%b",
+                     opcode_ex_mem_reg, rd_addr_ex_mem_reg, mem_read_ex_mem_reg, reg_write_ex_mem_reg, mem_to_reg_ex_mem_reg);
+        end
+    end
+
+    // 当 lw 指令 (rd=30 或 rd=29) 在 MEM/WB 寄存器的输出 (即 WB 阶段的输入)
+    // 注意：这里我们用 rd_addr 和期望的 mem_to_reg 值来识别 lw 指令，因为 PC 可能不直接传递到此点
+    always @(*) begin
+        // 检查是否可能是我们关心的 lw 指令准备写回
+        if ((rd_addr_mem_wb == 5'd30 || rd_addr_mem_wb == 5'd29)) begin
+             // 并且其控制信号表明它是一个load的结果
+            if (mem_to_reg_wb_reg_out == `MEM_TO_REG_MEM || reg_write_mem_wb == 1'b1) begin // 稍微放宽条件以便捕获
+                $display("[CPU_TOP_MEMWB_OUT_LW] WB_In_RD=%d (PC_plus_4_MEM_WB=0x%h - indicative)", rd_addr_mem_wb, pc_plus_4_mem_wb);
+                $display("    MEMWB_Out->WB_In: reg_write=%b, mem_to_reg=%b",
+                         reg_write_mem_wb, mem_to_reg_wb_reg_out);
+                $display("    MEMWB_Out_Data: ex_result=0x%h, mem_data=0x%h", ex_result_mem_wb, mem_read_data_mem_wb);
+            end
+        end
+    end
+
     // Instantiate PC Logic
     pc_logic u_pc_logic (
         .clk(clk),
@@ -198,6 +241,42 @@ module cpu_top (
         .instruction_id_o(instruction_id)
     );
     
+    // 调试：监控 ID 阶段输出的立即数 (针对 BNE @ 0x210)
+    // BUG 分析提示 (基于最新日志):
+
+    // 根本问题1: `if_id_register.v` 输出的 `instruction_id` 可能不稳定。
+    //   - 日志显示，对于 PC=0x210 处的指令 `0x14029463` (XOR 指令, opcode 0x33)，
+    //     `id_stage` 输出的 `immediate_id` 从 `0x144` 变为 `0x148`。
+    //   - 这种变化意味着 `immediate_id` 的第2位改变，这通常对应于B型立即数中源指令的 `instruction_id[9]` 位的改变。
+    //   - 这强烈暗示 `if_id_register.v` 输出的 `instruction_id` (特别是bit 9，也可能包括其他位如操作码位 `[6:0]`) 
+    //     在单个时钟周期内是不稳定的。
+    //   - 解决方案: 检查 `if_id_register.v` 的逻辑，确保其输出 `instruction_id_o` 在整个时钟周期内是稳定的，
+    //     除非受到有效的 `stall_i` 或 `flush_i` 控制。同时检查其输入 `instruction_if_i` 是否稳定。
+
+    // 根本问题2: `id_stage.v` 内部操作码解码错误，可能由不稳定的 `instruction_id` 引发或加剧。
+    //   - Testbench日志 `[ID] PC=0x00000210, 指令=0x14029463, opcode=0x63, rd=x 8` 表明：
+    //     当 `id_stage` 的输入 `instruction_i` (即此处的 `instruction_id`) 为 `0x14029463` (实际是XOR, opcode 0x33) 时，
+    //     `id_stage` 的输出 `opcode_ex_o` (即此处的 `opcode_id`) 却错误地变成了 `0x63` (OPCODE_BRANCH)。
+    //   - 如果 `instruction_id[6:0]` (操作码位) 不稳定，`id_stage` 可能锁存了一个错误的操作码。
+    //   - 解决方案: 在确保 `instruction_id` 稳定后，检查 `id_stage.v` 中 `opcode_ex_o` 的赋值逻辑。
+    //     它应该直接且正确地来源于稳定的 `instruction_i[6:0]`。
+
+    // 根本问题3: `id_stage.v` 输出的 `immediate_id` 不正确。
+    //   - 即使 `id_stage` 错误地将操作码识别为 `0x63` (BRANCH)，如果其内部 `immediate_generator` 模块
+    //     (如 `immediate_generator.v`) 被正确地提供了指令 `0x14029463` 和操作码 `0x63`，
+    //     生成的B型立即数应为 `0x290`。
+    //   - 然而，日志中 `immediate_id` 为 `0x144/0x148`。这表明 `id_stage` 内部传递给其
+    //     `immediate_generator` 的指令位可能受到了 `instruction_id` 不稳定性的影响，或者 `id_stage`
+    //     有其自己错误的立即数生成逻辑，或者其连接到 `immediate_generator` 的方式有问题。
+    //   - 解决方案: 在确保 `instruction_id` 稳定且操作码解码正确后，检查 `id_stage.v` 如何生成/传递 `immediate_ex_o`。
+
+    always @(*) begin
+        if (pc_id == 32'h00000210 && opcode_id == `OPCODE_BRANCH) begin // This condition is met due to id_stage error
+            $display("[CPU_TOP_ID_OUT_BNE_0x210] PC_ID=0x%h, Instr_ID_Input=0x%h, Opcode_ID_Output=0x%x, Imm_ID_Output=0x%h (Test expects imm 0x14A; if 0x14029463 were BNE, imm would be 0x290)",
+                     pc_id, instruction_id, opcode_id, immediate_id);
+        end
+    end
+
     // Instantiate ID Stage - 修复：添加时钟和复位信号
     id_stage u_id_stage (
         .clk(clk),                              // 修复：连接时钟
@@ -292,6 +371,14 @@ module cpu_top (
         .forward_a_select_ex_o(forward_a_select_ex_reg), // Output from ID/EX reg
         .forward_b_select_ex_o(forward_b_select_ex_reg)  // Output from ID/EX reg
     );
+
+    // 调试：监控 ID/EX 寄存器输出的立即数 (针对 BNE @ 0x210)
+    always @(*) begin
+        if (pc_ex_from_reg == 32'h00000210 && opcode_id_ex == `OPCODE_BRANCH) begin
+            $display("[CPU_TOP_IDEX_OUT_BNE_0x210] PC_EX_FROM_REG=0x%h, IMM_ID_EX=0x%h (Expected 0x14A), OPCODE=0x%x",
+                     pc_ex_from_reg, immediate_id_ex, opcode_id_ex);
+        end
+    end
     
     // Define what constitutes a NOP for hazard detection purposes
     wire ex_is_effectively_nop = (opcode_id_ex == `OPCODE_IMM && rd_addr_id_ex == `REG_ZERO && rs1_addr_id_ex == `REG_ZERO && immediate_id_ex == 32'd0) || 
@@ -380,6 +467,15 @@ module cpu_top (
         .reg_write_mem_o(reg_write_ex_mem),
         .mem_to_reg_mem_o(mem_to_reg_ex_mem)
     );
+
+    // 调试：监控 EX 阶段输出的立即数 (即 EX/MEM 寄存器输入，针对 BNE @ 0x210)
+    always @(*) begin
+        // pc_ex_mem 是 EX 阶段的 PC 输出, opcode_ex_mem 是 EX 阶段的 opcode 输出
+        if (pc_ex_mem == 32'h00000210 && opcode_ex_mem == `OPCODE_BRANCH) begin
+            $display("[CPU_TOP_EX_OUT_BNE_0x210] PC_EX_MEM=0x%h, IMM_EX_MEM=0x%h (Expected 0x14A), OPCODE=0x%x",
+                     pc_ex_mem, immediate_ex_mem, opcode_ex_mem);
+        end
+    end
     
     // Instantiate EX/MEM Register - 修复：使用正确的端口名称
     ex_mem_register u_ex_mem_register (
@@ -409,7 +505,7 @@ module cpu_top (
         .immediate_ex_mem_o(immediate_ex_mem_reg),
         .rd_addr_mem_o(rd_addr_ex_mem_reg),
         .funct3_mem_o(funct3_ex_mem_reg),
-        .opcode_mem_o(opcode_ex_mem_reg),        // 修复：使用正确的输出端口名
+        .opcode_mem_o(opcode_ex_mem_reg), // 修正：连接到 wire opcode_ex_mem_reg
         .mem_read_mem_o(mem_read_ex_mem_reg),
         .mem_write_mem_o(mem_write_ex_mem_reg),
         .branch_ctrl_mem_o(branch_ctrl_ex_mem_reg),
@@ -417,6 +513,16 @@ module cpu_top (
         .mem_to_reg_mem_o(mem_to_reg_ex_mem_reg)
     );
     
+    // 新增调试：监控特定BNE指令在MEM阶段的输入 (EX/MEM 寄存器输出)
+    always @(*) begin
+        if (pc_ex_mem_reg == 32'h00000210 && opcode_ex_mem_reg == `OPCODE_BRANCH) begin // BNE指令在0x210
+            $display("[CPU_TOP_MEM_INPUT_BNE_0x210] PC_EX_MEM_REG=0x%h, IMM_EX_MEM_REG=0x%h (Expected 0x14A), OPCODE=0x%x",
+                     pc_ex_mem_reg, immediate_ex_mem_reg, opcode_ex_mem_reg);
+            $display("    MEM Stage will calculate target as: 0x%h + 0x%h = 0x%h",
+                     pc_ex_mem_reg, immediate_ex_mem_reg, pc_ex_mem_reg + immediate_ex_mem_reg);
+        end
+    end
+
     // Instantiate Data Memory
     data_memory u_data_memory (
         .clk(clk),

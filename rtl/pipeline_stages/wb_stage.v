@@ -30,4 +30,24 @@ module wb_stage (
     assign rd_addr_o = rd_addr_wb_i;
     assign write_data_o = write_data_selected;
 
+    // Debugging Write-Back Stage
+    always @(*) begin
+        // Unconditional check for instructions that *should* be writing back from memory
+        if (mem_to_reg_wb_i == `MEM_TO_REG_MEM) begin
+            $display("[WB_STAGE_LW_CHECK] PC_PLUS_4_WB=0x%h (indicative), RD_WB=%d", pc_plus_4_wb_i, rd_addr_wb_i);
+            $display("    Controls: reg_write_wb_i=%b, mem_to_reg_wb_i=%b", reg_write_wb_i, mem_to_reg_wb_i);
+            $display("    Data: EX_Result_WB=0x%h, Mem_Read_Data_WB=0x%h, Selected_Write_Data(write_data_o)=0x%h",
+                     ex_result_wb_i, mem_read_data_wb_i, write_data_selected);
+        end
+
+        // Original conditional debug
+        if (reg_write_wb_i && rd_addr_wb_i != `REG_ZERO) begin // Only display if actual write is happening to non-x0
+            // $display("[WB_STAGE_DEBUG] PC_PLUS_4_WB=0x%h, RD_WB=%d, REG_WRITE_WB=%b, MEM_TO_REG_WB=%b",
+            //          pc_plus_4_wb_i, rd_addr_wb_i, reg_write_wb_i, mem_to_reg_wb_i);
+            // $display("    EX_Result_WB: 0x%h, Mem_Read_Data_WB: 0x%h",
+            //          ex_result_wb_i, mem_read_data_wb_i);
+            // $display("    Selected_Write_Data (write_data_o): 0x%h", write_data_selected);
+        end
+    end
+
 endmodule
