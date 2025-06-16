@@ -123,7 +123,8 @@ module cpu_top (
     wire [31:0] ex_result_mem_wb;
     wire [4:0]  rd_addr_mem_wb;
     wire        reg_write_mem_wb;
-    wire [1:0]  mem_to_reg_mem_wb;
+    wire [1:0]  mem_to_reg_from_mem_stage; // Renamed wire from mem_stage output
+    wire [1:0]  mem_to_reg_wb_reg_out;     // New wire for MEM/WB register output
     
     // WB Stage signals
     wire        reg_write_wb;
@@ -292,6 +293,12 @@ module cpu_top (
         .forward_b_select_ex_o(forward_b_select_ex_reg)  // Output from ID/EX reg
     );
     
+    // Define what constitutes a NOP for hazard detection purposes
+    wire ex_is_effectively_nop = (opcode_id_ex == `OPCODE_IMM && rd_addr_id_ex == `REG_ZERO && rs1_addr_id_ex == `REG_ZERO && immediate_id_ex == 32'd0) || 
+                                 (!reg_write_id_ex && !mem_read_id_ex && !mem_write_id_ex && !branch_id_ex);
+    wire mem_is_effectively_nop = (opcode_ex_mem_reg == `OPCODE_IMM && rd_addr_ex_mem_reg == `REG_ZERO) || 
+                                 (!reg_write_ex_mem_reg && !mem_read_ex_mem_reg && !mem_write_ex_mem_reg && !branch_ctrl_ex_mem_reg);
+
     // Instantiate Hazard Unit - 修复：添加缺少的端口连接
     hazard_unit u_hazard_unit (
         .id_rs1_addr_i(rs1_addr_rf),
@@ -302,10 +309,10 @@ module cpu_top (
         .ex_rd_addr_i(rd_addr_id_ex),
         .ex_reg_write_i(reg_write_id_ex),
         .ex_mem_read_i(mem_read_id_ex),
-        .ex_is_nop_i(opcode_id_ex == `OPCODE_NOP),
+        .ex_is_nop_i(ex_is_effectively_nop),
         .mem_rd_addr_i(rd_addr_ex_mem_reg),
         .mem_reg_write_i(reg_write_ex_mem_reg),
-        .mem_is_nop_i(opcode_ex_mem_reg == `OPCODE_NOP),
+        .mem_is_nop_i(mem_is_effectively_nop),
         .branch_jump_request_mem_i(branch_jump_request_mem),
         .pc_sel_decision_mem_i(pc_sel_decision_mem),
         .wb_rd_addr_i(rd_addr_mem_wb),
@@ -440,7 +447,7 @@ module cpu_top (
         .mem_to_reg_mem_i(mem_to_reg_ex_mem_reg),
         .data_mem_read_data_i(data_mem_read_data),
         
-        .mem_to_reg_wb_o(mem_to_reg_mem_wb), // To MEM/WB reg
+        .mem_to_reg_wb_o(mem_to_reg_from_mem_stage), // Output from mem_stage to this new wire
         .branch_jump_request_o(branch_jump_request_mem),
         .pc_sel_decision_o(pc_sel_decision_mem),
         .branch_jump_target_addr_o(branch_jump_target_from_mem),
@@ -451,23 +458,22 @@ module cpu_top (
     mem_wb_register u_mem_wb_register (
         .clk(clk),
         .rst_n(rst_n),
-        .stall_i(1'b0), // Assuming MEM/WB never stalls for now
-        .flush_i(1'b0), // Assuming MEM/WB is not directly flushed by hazard unit for now
+        .stall_i(1'b0), 
+        .flush_i(1'b0), 
         
-        .pc_plus_4_mem_i(pc_plus_4_ex_mem_reg), // pc_plus_4 from EX/MEM
+        .pc_plus_4_mem_i(pc_plus_4_ex_mem_reg), 
         .mem_read_data_mem_i(data_mem_read_data),
         .ex_result_mem_i(ex_result_ex_mem_reg),
         .rd_addr_mem_i(rd_addr_ex_mem_reg),
         .reg_write_mem_i(reg_write_ex_mem_reg),
-        .mem_to_reg_mem_i(mem_to_reg_mem_wb), // mem_to_reg_mem_wb from mem_stage
+        .mem_to_reg_mem_i(mem_to_reg_from_mem_stage), // Input from mem_stage (via the new wire)
         
         .pc_plus_4_wb_o(pc_plus_4_mem_wb),
         .mem_read_data_wb_o(mem_read_data_mem_wb),
         .ex_result_wb_o(ex_result_mem_wb),
         .rd_addr_wb_o(rd_addr_mem_wb),
         .reg_write_wb_o(reg_write_mem_wb),
-        .mem_to_reg_wb_o(mem_to_reg_mem_wb) // This output name was duplicated, should be distinct if used as input to wb_stage
-                                            // Corrected: mem_to_reg_wb_o is the output of mem_wb_register
+        .mem_to_reg_wb_o(mem_to_reg_wb_reg_out) // Output to the new dedicated wire
     );
     
     // Instantiate WB Stage
@@ -477,7 +483,7 @@ module cpu_top (
         .ex_result_wb_i(ex_result_mem_wb),
         .rd_addr_wb_i(rd_addr_mem_wb),
         .reg_write_wb_i(reg_write_mem_wb),
-        .mem_to_reg_wb_i(mem_to_reg_mem_wb), // Input from MEM/WB register's output
+        .mem_to_reg_wb_i(mem_to_reg_wb_reg_out), // Input from MEM/WB register's dedicated output wire
         
         .reg_write_o(reg_write_wb),
         .rd_addr_o(rd_addr_wb),

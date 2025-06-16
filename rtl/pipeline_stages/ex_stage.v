@@ -3,163 +3,142 @@
 module ex_stage (
     input  wire        clk,
     input  wire        rst_n,
-    
+
+    // Inputs from ID/EX Register
     input  wire [31:0] pc_ex_i,
     input  wire [31:0] pc_plus_4_ex_i,
     input  wire [31:0] operand_a_ex_i,
-    input  wire [31:0] operand_b_src_ex_i,
+    input  wire [31:0] operand_b_src_ex_i, // rs2_data if not immediate, or immediate itself for some interpretations
     input  wire [31:0] immediate_ex_i,
     input  wire [4:0]  rd_addr_ex_i,
     input  wire [2:0]  funct3_ex_i,
     input  wire [6:0]  funct7_ex_i,
     input  wire [6:0]  opcode_ex_i,
     input  wire [3:0]  alu_op_ex_i,
-    input  wire        alu_src_ex_i,
+    input  wire        alu_src_ex_i,       // 0: operand_b from reg, 1: operand_b from immediate
     input  wire        mem_read_ex_i,
     input  wire        mem_write_ex_i,
-    input  wire        branch_ctrl_ex_i,
+    input  wire        branch_ctrl_ex_i,   // Indicates if instruction is a branch type
     input  wire        reg_write_ex_i,
     input  wire [1:0]  mem_to_reg_ex_i,
-    input  wire [31:0] forward_data_a_i,
-    input  wire [31:0] forward_data_b_i,
-    input  wire [1:0]  forward_a_select_i,
-    input  wire [1:0]  forward_b_select_i,
-    
-    output wire [31:0] pc_for_mem_o,
-    output wire [31:0] pc_plus_4_mem_o,
-    output wire [31:0] ex_result_mem_o,
-    output wire        zero_flag_mem_o,
-    output wire [31:0] reg2_data_mem_o,
-    output wire [31:0] immediate_mem_o,
-    output wire [4:0]  rd_addr_mem_o,
-    output wire [2:0]  funct3_mem_o,
-    output wire [6:0]  opcode_mem_o,
-    output wire        mem_read_mem_o,
-    output wire        mem_write_mem_o,
-    output wire        branch_ctrl_mem_o,
-    output wire        reg_write_mem_o,
-    output wire [1:0]  mem_to_reg_mem_o
+
+    // Forwarding inputs
+    input  wire [31:0] forward_data_a_i,   // Data from EX/MEM (ALU result of previous cycle)
+    input  wire [31:0] forward_data_b_i,   // Data from MEM/WB (Result of instruction two cycles ago)
+    input  wire [1:0]  forward_a_select_i, // Forwarding MUX select for operand A
+    input  wire [1:0]  forward_b_select_i, // Forwarding MUX select for operand B
+
+    // Outputs to EX/MEM Register
+    output reg [31:0] pc_for_mem_o,
+    output reg [31:0] pc_plus_4_mem_o,
+    output reg [31:0] ex_result_mem_o,
+    output reg        zero_flag_mem_o,
+    output reg [31:0] reg2_data_mem_o,      // Data to be stored (rs2_data)
+    output reg [31:0] immediate_mem_o,    // Pass immediate for potential use in MEM (e.g. offset for branch)
+    output reg [4:0]  rd_addr_mem_o,
+    output reg [2:0]  funct3_mem_o,
+    output reg [6:0]  opcode_mem_o,
+    output reg        mem_read_mem_o,
+    output reg        mem_write_mem_o,
+    output reg        branch_ctrl_mem_o,  // To be used by MEM stage for branch decision
+    output reg        reg_write_mem_o,
+    output reg [1:0]  mem_to_reg_mem_o
 );
 
-    // 修复：确保前推逻辑是纯组合逻辑，没有时序竞争
-    wire [31:0] operand_a_forwarded;
-    wire [31:0] operand_b_forwarded;
-    
-    // 前推选择逻辑 - 修复：使用更明确的条件判断
-    assign operand_a_forwarded = (forward_a_select_i == `FORWARD_EX_MEM) ? forward_data_a_i :
-                                (forward_a_select_i == `FORWARD_MEM_WB) ? forward_data_b_i :
-                                operand_a_ex_i;
-                                
-    assign operand_b_forwarded = (forward_b_select_i == `FORWARD_EX_MEM) ? forward_data_a_i :
-                                (forward_b_select_i == `FORWARD_MEM_WB) ? forward_data_b_i :
-                                operand_b_src_ex_i;
-    
-    // ALU第二个操作数选择
-    wire [31:0] alu_operand_b = alu_src_ex_i ? immediate_ex_i : operand_b_forwarded;
-    
-    // ALU结果
-    wire [31:0] alu_result;
-    wire        alu_zero_flag;
-    
-    // 乘法器结果
-    wire [31:0] mul_result;
-    
-    // 结果选择（ALU或乘法器）
-    wire [31:0] final_result;
-    
-    // 超级详细的调试：监控前推信号的每一个时刻
-    always @(*) begin
-        if (pc_ex_i == 32'h118 && opcode_ex_i == 7'h33) begin
-            $display("========================================");
-            $display("[EX_SUPER_DEBUG] SUB指令超详细分析:");
-            $display("时刻监控 - 输入信号:");
-            $display("  PC: 0x%08x", pc_ex_i);
-            $display("  原始操作数: A=0x%08x, B=0x%08x", operand_a_ex_i, operand_b_src_ex_i);
-            $display("  前推数据输入: data_a=0x%08x, data_b=0x%08x", 
-                    forward_data_a_i, forward_data_b_i);
-            $display("  前推选择输入: forward_a=%b(%d), forward_b=%b(%d)", 
-                    forward_a_select_i, forward_a_select_i,
-                    forward_b_select_i, forward_b_select_i);
-            
-            $display("时刻监控 - 前推逻辑计算:");
-            $display("  前推A条件检查:");
-            $display("    forward_a == FORWARD_EX_MEM (%b): %b", 
-                    `FORWARD_EX_MEM, (forward_a_select_i == `FORWARD_EX_MEM));
-            $display("    forward_a == FORWARD_MEM_WB (%b): %b", 
-                    `FORWARD_MEM_WB, (forward_a_select_i == `FORWARD_MEM_WB));
-            
-            $display("  前推B条件检查:");
-            $display("    forward_b == FORWARD_EX_MEM (%b): %b", 
-                    `FORWARD_EX_MEM, (forward_b_select_i == `FORWARD_EX_MEM));
-            $display("    forward_b == FORWARD_MEM_WB (%b): %b", 
-                    `FORWARD_MEM_WB, (forward_b_select_i == `FORWARD_MEM_WB));
-            
-            $display("时刻监控 - 前推结果:");
-            $display("  前推后操作数: A=0x%08x, B=0x%08x", 
-                    operand_a_forwarded, operand_b_forwarded);
-            $display("  最终ALU操作数: A=0x%08x, B=0x%08x", 
-                    operand_a_forwarded, alu_operand_b);
-            $display("  ALU控制: %d, ALU源选择: %d", alu_op_ex_i, alu_src_ex_i);
-            
-            // 特别检查错误的操作数来源
-            if (operand_a_forwarded != 32'hc41f1efb || alu_operand_b != 32'h6a9e3146) begin
-                $display("*** 错误检测：操作数不匹配期望值！***");
-                $display("    期望: A=0xc41f1efb, B=0x6a9e3146");
-                $display("    实际: A=0x%08x, B=0x%08x", operand_a_forwarded, alu_operand_b);
-                
-                // 检查是否是前推选择的问题
-                if (forward_a_select_i != 2'b00) begin
-                    $display("    forward_a_select_i=%b 不是00，前推A被激活", forward_a_select_i);
-                end
-                if (forward_b_select_i != 2'b00) begin
-                    $display("    forward_b_select_i=%b 不是00，前推B被激活", forward_b_select_i);
-                end
-            end else begin
-                $display("✓ 操作数正确！");
-            end
-            $display("========================================");
-        end
-    end
-    
-    // 实例化ALU
+    // Internal signals for ALU operands
+    reg [31:0] alu_operand_a;
+    reg [31:0] alu_operand_b;
+    wire [31:0] alu_result_internal;
+    wire        zero_flag_internal;
+
+    // Internal signals for forwarded operands
+    reg [31:0] operand_a_forwarded_local;
+    reg [31:0] operand_b_forwarded_local;
+
+
+    // ALU instantiation
     alu u_alu (
-        .operand_a(operand_a_forwarded),
+        .operand_a(alu_operand_a),
         .operand_b(alu_operand_b),
         .alu_op(alu_op_ex_i),
-        .alu_result(alu_result),
-        .zero_flag(alu_zero_flag)
+        .alu_result(alu_result_internal),
+        .zero_flag(zero_flag_internal)
     );
     
-    // 实例化乘法器
-    multiplier u_multiplier (
-        .operand_a(operand_a_forwarded),
-        .operand_b(operand_b_forwarded),
-        .alu_op(alu_op_ex_i),
-        .mul_result(mul_result)
-    );
-    
-    // 实例化ALU/乘法器结果选择器
-    ex_alu_mul_mux u_ex_alu_mul_mux (
-        .alu_op(alu_op_ex_i),
-        .alu_result(alu_result),
-        .mul_result(mul_result),
-        .final_result(final_result)
-    );
-    
-    // 输出信号
-    assign pc_for_mem_o = pc_ex_i;
-    assign pc_plus_4_mem_o = pc_plus_4_ex_i;
-    assign ex_result_mem_o = final_result;
-    assign zero_flag_mem_o = alu_zero_flag;
-    assign reg2_data_mem_o = operand_b_forwarded;
-    assign immediate_mem_o = immediate_ex_i;
-    assign rd_addr_mem_o = rd_addr_ex_i;
-    assign funct3_mem_o = funct3_ex_i;
-    assign opcode_mem_o = opcode_ex_i;
-    assign mem_read_mem_o = mem_read_ex_i;
-    assign mem_write_mem_o = mem_write_ex_i;
-    assign branch_ctrl_mem_o = branch_ctrl_ex_i;
-    assign reg_write_mem_o = reg_write_ex_i;
-    assign mem_to_reg_mem_o = mem_to_reg_ex_i;
+    // Combinational logic for EX stage
+    always @(*) begin
+        // ** FIX: Default assignment for forwarded operands **
+        // These lines ensure that if no forwarding is selected,
+        // the operands from the ID/EX register are used.
+        operand_a_forwarded_local = operand_a_ex_i;
+        operand_b_forwarded_local = operand_b_src_ex_i; // This is rs2_data if alu_src is register
+
+        // Forwarding logic for operand A
+        if (forward_a_select_i == `FORWARD_EX_MEM) begin
+            operand_a_forwarded_local = forward_data_a_i;
+        end else if (forward_a_select_i == `FORWARD_MEM_WB) begin
+            operand_a_forwarded_local = forward_data_b_i;
+        end
+
+        // Forwarding logic for operand B (only if not using immediate for ALU op B)
+        if (forward_b_select_i == `FORWARD_EX_MEM) begin
+            operand_b_forwarded_local = forward_data_a_i;
+        end else if (forward_b_select_i == `FORWARD_MEM_WB) begin
+            operand_b_forwarded_local = forward_data_b_i;
+        end
+        
+        // Select ALU operands
+        alu_operand_a = operand_a_forwarded_local;
+        
+        if (alu_src_ex_i) begin // If alu_src is 1, operand B is immediate
+            alu_operand_b = immediate_ex_i;
+        end else begin // Otherwise, operand B is from register (possibly forwarded)
+            alu_operand_b = operand_b_forwarded_local;
+        end
+
+        // Pass-through control signals and data to EX/MEM register
+        pc_for_mem_o        = pc_ex_i;
+        pc_plus_4_mem_o     = pc_plus_4_ex_i;
+        ex_result_mem_o     = alu_result_internal;
+        zero_flag_mem_o     = zero_flag_internal;
+        reg2_data_mem_o     = operand_b_forwarded_local; // For store instructions, pass rs2_data (potentially forwarded)
+                                                       // Note: if alu_src_ex_i is 1, operand_b_src_ex_i might be garbage if not handled.
+                                                       // For stores, alu_src is 1, but operand_b_src_ex_i should be rs2_data.
+                                                       // Control unit should ensure alu_src is 0 for R-type and Store.
+                                                       // For Store, operand_b_src_ex_i is rs2_data.
+                                                       // The immediate is used for address calculation with rs1_data.
+                                                       // So, reg2_data_mem_o should be operand_b_src_ex_i (original rs2 value from ID/EX)
+                                                       // if it's a store.
+                                                       // Let's pass the original operand_b_src_ex_i for stores.
+        if (mem_write_ex_i) begin // If it's a store instruction
+             reg2_data_mem_o = operand_b_src_ex_i; // Pass the original rs2 data for store
+        end else begin
+             reg2_data_mem_o = operand_b_forwarded_local; // For other uses, pass the (potentially) forwarded value
+        end
+
+        immediate_mem_o     = immediate_ex_i; // Pass immediate for branch offset calculation in MEM
+        rd_addr_mem_o       = rd_addr_ex_i;
+        funct3_mem_o        = funct3_ex_i;
+        opcode_mem_o        = opcode_ex_i;
+        mem_read_mem_o      = mem_read_ex_i;
+        mem_write_mem_o     = mem_write_ex_i;
+        branch_ctrl_mem_o   = branch_ctrl_ex_i;
+        reg_write_mem_o     = reg_write_ex_i;
+        mem_to_reg_mem_o    = mem_to_reg_ex_i;
+
+        // Debug: This is where the testbench's EX_SUPER_DEBUG would sample from
+        // To verify, you can add $display here too.
+        // Example:
+        // if (pc_ex_i == 32'h00000118) begin
+        //     $display("[EX_STAGE_INTERNAL_DEBUG] @ %0t", $time);
+        //     $display("  Inputs: op_a_ex_i=0x%h, op_b_src_ex_i=0x%h", operand_a_ex_i, operand_b_src_ex_i);
+        //     $display("  Fwd Sel: fwd_a_sel=%b, fwd_b_sel=%b", forward_a_select_i, forward_b_select_i);
+        //     $display("  Fwd Data: fwd_data_a=0x%h, fwd_data_b=0x%h", forward_data_a_i, forward_data_b_i);
+        //     $display("  Locals: op_a_fwd_local=0x%h, op_b_fwd_local=0x%h", operand_a_forwarded_local, operand_b_forwarded_local);
+        //     $display("  ALU Inputs: alu_op_a=0x%h, alu_op_b=0x%h", alu_operand_a, alu_operand_b);
+        //     $display("  ALU Ctrl: alu_src_ex_i=%b, alu_op_ex_i=%b", alu_src_ex_i, alu_op_ex_i);
+        // end
+
+    end
 
 endmodule

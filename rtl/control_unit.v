@@ -101,31 +101,41 @@ module control_unit (
             end
             
             `OPCODE_ARITH: begin
-                case (funct3_i)
-                    `FUNCT3_ADD: begin
-                        if (funct7_i == `FUNCT7_SUB) begin
-                            alu_op_o = `ALU_SUB;
-                        end else begin
-                            alu_op_o = `ALU_ADD;
-                        end
-                    end
-                    `FUNCT3_SLL: alu_op_o = `ALU_SLL;
-                    `FUNCT3_SLT: alu_op_o = `ALU_SLT;
-                    `FUNCT3_SLTU: alu_op_o = `ALU_SLTU;
-                    `FUNCT3_XOR: alu_op_o = `ALU_XOR;
-                    `FUNCT3_SRL: begin
-                        if (funct7_i == `FUNCT7_SRA)
-                            alu_op_o = `ALU_SRA;
-                        else
-                            alu_op_o = `ALU_SRL;
-                    end
-                    `FUNCT3_OR: alu_op_o = `ALU_OR;
-                    `FUNCT3_AND: alu_op_o = `ALU_AND;
-                    default: alu_op_o = `ALU_ADD;
-                endcase
-                alu_src_o = 1'b0;
-                reg_write_o = 1'b1;
+                alu_src_o = 1'b0;       // R-type instructions use two registers
+                reg_write_o = 1'b1;     // R-type instructions (mostly) write to a register
                 mem_to_reg_o = `MEM_TO_REG_ALU;
+
+                if (funct7_i == `FUNCT7_MUL) begin // M Extension instructions
+                    case (funct3_i)
+                        `FUNCT3_ADD:  alu_op_o = `ALU_MUL;    // MUL (funct3 for MUL is 000)
+                        `FUNCT3_SLL:  alu_op_o = `ALU_MULH;   // MULH (funct3 for MULH is 001)
+                        `FUNCT3_SLT:  alu_op_o = `ALU_MULHSU; // MULHSU (funct3 for MULHSU is 010)
+                        `FUNCT3_SLTU: alu_op_o = `ALU_MULHU; // MULHU (funct3 for MULHU is 011)
+                        default:      alu_op_o = `ALU_ADD; // Should be illegal instruction
+                    endcase
+                end else begin // Base ISA R-type instructions
+                    case (funct3_i)
+                        `FUNCT3_ADD: begin // ADD or SUB
+                            if (funct7_i == `FUNCT7_SUB)
+                                alu_op_o = `ALU_SUB;
+                            else // Assumes FUNCT7_ADD or other (e.g. from non-standard use)
+                                alu_op_o = `ALU_ADD; 
+                        end
+                        `FUNCT3_SLL: alu_op_o = `ALU_SLL;
+                        `FUNCT3_SLT: alu_op_o = `ALU_SLT;
+                        `FUNCT3_SLTU: alu_op_o = `ALU_SLTU;
+                        `FUNCT3_XOR: alu_op_o = `ALU_XOR;
+                        `FUNCT3_SRL: begin // SRL or SRA
+                            if (funct7_i == `FUNCT7_SRA)
+                                alu_op_o = `ALU_SRA;
+                            else
+                                alu_op_o = `ALU_SRL;
+                        end
+                        `FUNCT3_OR:  alu_op_o = `ALU_OR;
+                        `FUNCT3_AND: alu_op_o = `ALU_AND;
+                        default: alu_op_o = `ALU_ADD; // Should be illegal instruction
+                    endcase
+                end
             end
             
             default: begin

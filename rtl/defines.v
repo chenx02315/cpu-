@@ -16,9 +16,7 @@
 `define OPCODE_STORE    7'b0100011  // Store Instructions
 `define OPCODE_IMM      7'b0010011  // Immediate Arithmetic
 `define OPCODE_ARITH    7'b0110011  // Register-Register Arithmetic
-
-// 添加缺失的宏定义
-`define OPCODE_NOP      `OPCODE_IMM  // NOP指令的操作码与ADDI相同 (OPCODE_IMM)
+`define OPCODE_NOP      7'b0010011  // NOP (addi x0,x0,0) is an I-type, so uses OPCODE_IMM
 
 //=================================================
 // 功能码定义 (funct3)
@@ -84,7 +82,7 @@
 // ALU控制信号定义
 //=================================================
 `define ALU_ADD         4'b0000     // 加法
-`define ALU_SUB         4'b0001     // 减法 - 确保SUB操作码
+`define ALU_SUB         4'b0001     // 减法
 `define ALU_AND         4'b0010     // 按位与
 `define ALU_OR          4'b0011     // 按位或
 `define ALU_XOR         4'b0100     // 按位异或
@@ -124,9 +122,9 @@
 //=================================================
 // 前推选择信号定义
 //=================================================
+`define FORWARD_NONE        2'b00   // 不前推 (原为 FORWARD_NO)
 `define FORWARD_EX_MEM      2'b01   // 从EX/MEM前推
 `define FORWARD_MEM_WB      2'b10   // 从MEM/WB前推
-`define FORWARD_NONE        2'b00   // 无前推，使用寄存器值
 
 //=================================================
 // 寄存器地址定义
