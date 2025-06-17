@@ -46,14 +46,14 @@ module id_stage (
     // 修复：调试输出 - 使用时钟边沿触发避免重复
     always @(posedge clk) begin
         if (rst_n && instruction_i != 32'h00000013) begin  // 不是NOP指令
-            $display("[ID] PC=0x%08x, 指令=0x%08x, opcode=0x%02x, rd=x%d", 
+            $display("[ID] PC=0x%08x, instruction=0x%08x, opcode=0x%02x, rd=x%d", 
                     pc_i, instruction_i, opcode, rd_addr);
             
             if (opcode == `OPCODE_LUI) begin
-                $display("     -> LUI指令: x%d = 0x%08x", rd_addr, immediate_ex_o);
-                $display("     -> 指令字段: [31:12]=0x%05x, [11:7]=0x%02x", 
+                $display("     -> LUI instruction: x%d = 0x%08x", rd_addr, immediate_ex_o);
+                $display("     -> instruction field: [31:12]=0x%05x, [11:7]=0x%02x", 
                         instruction_i[31:12], instruction_i[11:7]);
-                $display("     -> 解码结果: rd=%d, 立即数=0x%08x", 
+                $display("     -> decoding result: rd=%d, imm=0x%08x", 
                         rd_addr, immediate_ex_o);
             end
         end

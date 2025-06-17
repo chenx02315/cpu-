@@ -46,7 +46,7 @@ module data_memory (
         for (i = 0; i < DATA_MEM_SIZE; i = i + 1) begin
             data_mem[i] = 8'h00;
         end
-        $display("数据存储器初始化完成，大小: %0d字节 (0x%0x - 0x%0x)", DATA_MEM_SIZE, 0, DATA_MEM_SIZE-1);
+        $display("data memory initialization complete, size: %0d Bytes (0x%0x - 0x%0x)", DATA_MEM_SIZE, 0, DATA_MEM_SIZE-1);
     end
 
     // 写操作 (异步写，但在时钟控制的模块中通常是同步的，这里保持异步风格以匹配常见简单内存模型)

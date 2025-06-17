@@ -11,7 +11,6 @@ module if_stage (
     output wire [31:0] instruction_if_id_o
 );
 
-    // IF阶段直接传递信号
     assign instr_addr_o = pc_i;
     assign pc_if_id_o = pc_i;
     assign pc_plus_4_if_id_o = pc_plus_4_i;

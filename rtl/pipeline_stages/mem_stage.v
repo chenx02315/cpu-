@@ -97,12 +97,12 @@ module mem_stage (
     assign branch_jump_request_o = branch_jump_request;
     assign pc_sel_decision_o = pc_sel_decision;
     assign branch_jump_target_addr_o = branch_target_addr;
-    assign jalr_target_addr_o = ex_result_mem_i; // Specifically for JALR
+    assign jalr_target_addr_o = jalr_target_addr;
     
     // 调试输出
     always @(*) begin
         if (branch_ctrl_mem_i && branch_taken) begin
-            $display("[MEM_DEBUG] 分支跳转: PC=0x%08x -> 0x%08x, 类型=%s", 
+            $display("[MEM_DEBUG] branch turn: PC=0x%08x -> 0x%08x, type=%s", 
                     pc_ex_mem_i, branch_target_addr,
                     (funct3_mem_i == `FUNCT3_BEQ) ? "BEQ" :
                     (funct3_mem_i == `FUNCT3_BNE) ? "BNE" :
@@ -113,25 +113,13 @@ module mem_stage (
         end
         
         if (opcode_ex_mem_i == `OPCODE_JAL) begin
-            $display("[MEM_DEBUG] JAL跳转: PC=0x%08x -> 0x%08x", 
+            $display("[MEM_DEBUG] JAL turn: PC=0x%08x -> 0x%08x", 
                     pc_ex_mem_i, branch_target_addr);
         end
         
         if (opcode_ex_mem_i == `OPCODE_JALR) begin
-            $display("[MEM_DEBUG] JALR跳转: PC=0x%08x -> 0x%08x", 
+            $display("[MEM_DEBUG] JALR turn: PC=0x%08x -> 0x%08x", 
                     pc_ex_mem_i, jalr_target_addr);
-        end
-
-        // Debugging Load Operations
-        if (opcode_ex_mem_i == `OPCODE_LOAD) begin
-            $display("[MEM_STAGE_LW_CHECK] PC_MEM=0x%h, Opcode=%b (`OPCODE_LOAD)", pc_ex_mem_i, opcode_ex_mem_i);
-            $display("    Controls: RD_MEM=%d, mem_read_mem_i=%b, reg_write_mem_i=%b, mem_to_reg_mem_i=%b",
-                     rd_addr_mem_i, mem_read_mem_i, reg_write_mem_i, mem_to_reg_mem_i);
-            $display("    Data_Mem_Read_Data_Input: 0x%h", data_mem_read_data_i);
-        end
-
-        if (mem_read_mem_i) begin
-            // Original conditional debug
         end
     end
 
